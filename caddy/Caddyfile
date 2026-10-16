@@ -1,0 +1,121 @@
+# Optional global options (must be first). Empty by default.
+import /etc/caddy/overrides/global/*.caddy
+
+:80 {
+  redir https://{$FILEMASTER_DOMAIN}{uri} 308
+}
+
+(microfrontSearchPanelWeb) {
+  handle_path /microfrontSearchPanelWeb/* {
+    reverse_proxy search-panel:8080
+  }
+}
+
+(microfrontChatPanelWeb) {
+  handle_path /microfrontChatPanelWeb/* {
+    reverse_proxy chat-panel:8080
+  }
+}
+
+(microfrontSsoWeb) {
+  handle_path /microfrontSsoWeb/* {
+    reverse_proxy sso-front:8080
+  }
+}
+
+(microfrontPreviewerWeb) {
+  handle_path /microfrontPreviewerWeb/* {
+    reverse_proxy previewer-front:8080
+  }
+}
+
+(unleashApi) {
+  handle_path /unleash/* {
+    respond 404
+  }
+}
+
+# Public ingress: never forward client-supplied trusted service account id (mesh/internal gRPC only).
+(stripPublicTrustedServiceAccountHeaders) {
+  request_header -X-Trusted-Service-Account-Id
+  request_header -Grpc-Metadata-X-Trusted-Service-Account-Id
+}
+
+https://{$FILEMASTER_DOMAIN} {
+  tls /tls/cert.pem /tls/key.pem
+  
+  import microfrontSearchPanelWeb
+  import microfrontChatPanelWeb
+  import microfrontSsoWeb
+  import microfrontPreviewerWeb
+  import unleashApi
+  import stripPublicTrustedServiceAccountHeaders
+
+  handle /keycloak {
+    redir /keycloak/ 308
+  }
+
+  handle_path /keycloak/* {
+    uri strip_prefix /keycloak
+    reverse_proxy keycloak:8080
+  }
+
+  handle_path /redirect/* {
+    reverse_proxy sso-server:8080
+  }
+
+  handle_path /grpcweb/* {
+    reverse_proxy edms-server:10080 {
+      header_up Host {upstream_hostport}
+    }
+  }
+
+  handle_path /grpc/* {
+    reverse_proxy h2c://edms-server:10080 {
+      header_up Host {upstream_hostport}
+    }
+  }
+
+  handle /kkmp.edms.EDMService/* {
+    @grpc {
+      header Content-Type application/grpc*
+    }
+
+    reverse_proxy @grpc h2c://edms-server:10080 {
+      header_up Host {upstream_hostport}
+    }
+    reverse_proxy edms-server:8080 {
+      header_up Host {upstream_hostport}
+    }
+  }
+
+  handle /kkmp.sso.protos.SSOService/* {
+    reverse_proxy h2c://sso-server:10080 {
+      header_up Host {upstream_hostport}
+    }
+  }
+
+  handle /kkmp.audit_log.AuditLogService/* {
+    reverse_proxy h2c://audit-log:10080 {
+      header_up Host {upstream_hostport}
+    }
+  }
+
+  handle /kkmp.previewer.Previewer/* {
+    reverse_proxy h2c://previewer-server:10080 {
+      header_up Host {upstream_hostport}
+    }
+  }
+
+  handle /kkmp.searchp.Searchp/* {
+    reverse_proxy h2c://searchp-server:8085 {
+      header_up Host {upstream_hostport}
+    }
+  }
+
+  reverse_proxy edms-front:8080
+}
+
+# Optional blocks (empty by default). Survives delivery updates
+# when ./caddy/overrides is excluded from rsync and mounted via compose.
+import /etc/caddy/overrides/*.caddy

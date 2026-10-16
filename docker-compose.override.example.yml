@@ -1,0 +1,7 @@
+services:
+  postgresql:
+    volumes:
+      - /srv/filemaster/postgresql:/bitnami/postgresql
+  elasticsearch:
+    volumes:
+      - /srv/filemaster/elasticsearch:/usr/share/elasticsearch/data

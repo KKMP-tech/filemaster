@@ -1,0 +1,50 @@
+# Клиентская конфигурация Filemaster.
+# Скопируйте этот файл в client-config.yml и редактируйте только копию.
+# client-config.yml не попадает в Git и сохраняется между обновлениями поставки.
+
+# Версия формата файла. Не изменяйте значение без инструкции поставщика.
+config_schema: 2
+
+# Полное публичное имя Filemaster без протокола, пути и завершающей точки.
+# Например: filemaster.example.domain
+domain: filemaster.example.domain
+
+# Registry Docker-образов. Обязательное поле.
+docker_image_registry: cr.yandex/crp3hlk59bl8bqcmkevi
+
+# Подключение AD FS для этого compose-пакета.
+adfs:
+  # Интеграция настроена, но выключена до замены тестовых URL ниже.
+  enabled: false
+  # Название провайдера, которое увидит пользователь на странице входа.
+  display_name: KKMS AD FS
+  # Entity ID (идентификатор) AD FS Relying Party Trust, выданный AD FS.
+  entity_id: https://adfs.example.invalid/adfs/services/trust
+  # URL AD FS, на который Filemaster отправляет запрос входа.
+  sso_url: https://adfs.example.invalid/adfs/ls/
+  # URL AD FS, на который Filemaster отправляет запрос выхода.
+  slo_url: https://adfs.example.invalid/adfs/ls/
+  # URL XML-метаданных AD FS. Значение должно соответствовать настроенному
+  # Relying Party Trust.
+  metadata_url: https://adfs.example.invalid/FederationMetadata/2007-06/FederationMetadata.xml
+
+# Подключение LDAP. LDAP и AD FS нельзя включать одновременно.
+ldap:
+  # Интеграция настроена, но выключена до замены тестового адреса и учётных
+  # данных ниже.
+  enabled: false
+  # Название федерации пользователей в Keycloak.
+  name: office-ldap
+  # Адрес LDAP или LDAPS.
+  connection_url: ldaps://ldap.example.invalid
+  # Ветка каталога с пользователями.
+  users_dn: OU=Users,DC=example,DC=internal
+  # Учётная запись только для чтения каталога.
+  bind_dn: CN=filemaster,OU=Services,DC=example,DC=internal
+  bind_password: replace-me
+  # Ветка каталога с группами.
+  group_mapping_dn: OU=Groups,DC=example,DC=internal
+
+emergency_export:
+  # Папка для аварийного экспорта.
+  host_path: ./emergency-export/data

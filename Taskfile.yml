@@ -1,0 +1,154 @@
+version: '3'
+
+includes:
+  reposync:
+    taskfile: ./Taskfile.reposync.yml
+    optional: true
+    flatten: true
+  standby:
+    taskfile: ./Taskfile.standby.yml
+    optional: true
+    flatten: true
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task -l
+
+  fm-install:
+    desc: Install the fm renderer binary for this delivery
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - |
+        set -eu
+
+        tmp="./.fm-install.tmp"
+        rm -rf "$tmp"
+        mkdir -p "$tmp"
+        trap 'rm -rf "$tmp"' EXIT
+
+        artifact_ref="$(awk '/^[[:space:]]*ref:/ { print $2; exit }' .fm-release.yml)"
+        if [ -z "$artifact_ref" ]; then
+          echo "Error: .fm-release.yml does not define fm.artifact.ref" >&2
+          exit 1
+        fi
+
+        docker run --rm \
+          -v "$PWD/$tmp:/out" \
+          -u $(id -u):$(id -g) \
+          cr.yandex/crp3hlk59bl8bqcmkevi/oras:v1.3.2 \
+          pull "$artifact_ref" --output /out
+
+        if [ ! -f "$tmp/fm" ]; then
+          echo "Error: artifact $artifact_ref did not contain a file named fm" >&2
+          exit 1
+        fi
+
+        chmod 0755 "$tmp/fm"
+        mv -f "$tmp/fm" ./fm
+
+  config-render:
+    desc: Render Filemaster configuration
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - ./fm config render
+
+  check-config:
+    desc: Render configuration and validate Docker Compose
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - ./fm config render
+      - docker compose config >/dev/null
+
+  persistence-start:
+    desc: Start the persistence layer
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - config-render
+    cmds:
+      - docker compose up -d postgresql minio rabbitmq redpanda elasticsearch redis
+
+  persistence-bootstrap:
+    desc: Bootstrap persistence data and consumer accounts
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - config-render
+    cmds:
+      - docker compose run --rm postgresql-bootstrap
+      - docker compose run --rm minio-bootstrap
+      - docker compose run --rm rabbitmq-bootstrap
+      - docker compose run --rm redpanda-bootstrap
+
+  keycloak-start:
+    desc: Start Keycloak
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - config-render
+    cmds:
+      - docker compose up -d keycloak
+
+  keycloak-bootstrap:
+    desc: Apply the Keycloak realm import
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - config-render
+    cmds:
+      - docker compose run --rm keycloak-bootstrap
+      - docker compose run --rm keycloak-group-import
+
+  app-migrations:
+    desc: Run application database migrations
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - config-render
+    cmds:
+      - docker compose run --rm edms-db-migrations
+      - docker compose run --rm previewer-db-migrations
+      - docker compose run --rm pdf-text-storage-db-migrations
+      - docker compose run --rm audit-log-db-migrations
+      - docker compose run --rm spicedb-db-migrations
+
+  app-start:
+    desc: Start the application, scheduler, and gateway services
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - config-render
+    cmds:
+      - docker compose up -d sso-server sso-front edms-server edms-front edms-notifications audit-log previewer-front previewer-server previewer-listener previewer-job-worker pdf-text-storage-server pdf-text-storage-worker pdf-text-storage-watcher searchp-server search-panel chat-panel spicedb unoserver ofelia caddy
+
+  searchp-full-index:
+    desc: Run the manual full search index
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - config-render
+    cmds:
+      - docker compose run --rm --no-deps searchp-server ./searchp-indexer full-index
+
+  emergency-export:
+    desc: Run emergency export inside the utility container
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - config-render
+    cmds:
+      - docker compose run --rm emergencyexport {{.CLI_ARGS}}
+
+  bootstrap:
+    desc: Start the full EDMS stack in phases
+    cmds:
+      - task persistence-start
+      - task persistence-bootstrap
+      - task keycloak-start
+      - task keycloak-bootstrap
+      - task app-migrations
+      - task app-start
+
+  wipe:
+    desc: Stop the stack and remove named volumes
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - docker compose down -v --remove-orphans
+
+  repo-sync:
+    cmds:
+      - task: copy-bara-sync

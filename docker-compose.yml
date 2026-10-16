@@ -1,0 +1,1242 @@
+name: edms-single-node
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "1"
+
+services:
+  postgresql:
+    image: ${DOCKER_IMAGE_REGISTRY}/bitnami-postgresql:${POSTGRES_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      POSTGRES_DB: postgres
+      POSTGRESQL_MAX_CONNECTIONS: "250"
+    volumes:
+      - postgresql_data:/bitnami/postgresql
+    networks:
+      - persist
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U postgres -d postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  minio:
+    image: ${DOCKER_IMAGE_REGISTRY}/minio:${MINIO_IMAGE_TAG}
+    logging: *default-logging
+    command: [ "server", "/data", "--console-address", ":9001" ]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - persist
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null" ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  rabbitmq:
+    image: ${DOCKER_IMAGE_REGISTRY}/rabbitmq:${RABBITMQ_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_DEFAULT_VHOST: /
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - persist
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "rabbitmq-diagnostics -q ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  redpanda:
+    image: ${DOCKER_IMAGE_REGISTRY}/redpanda:${REDPANDA_IMAGE_TAG}
+    logging: *default-logging
+    command: |
+      redpanda start \
+        --node-id 0 \
+        --kafka-addr 0.0.0.0:9092 \
+        --advertise-kafka-addr redpanda:9092 \
+        --pandaproxy-addr 0.0.0.0:8082 \
+        --advertise-pandaproxy-addr redpanda:8082 \
+        --schema-registry-addr 0.0.0.0:8081 \
+        --rpc-addr 0.0.0.0:33145 \
+        --advertise-rpc-addr redpanda:33145 \
+        --smp 1 \
+        --default-log-level=info \
+        --set redpanda.partition_autobalancing_mode=node_add \
+        --set redpanda.cloud_storage_enabled=false \
+        --set redpanda.audit_enabled=false
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks:
+      - persist
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "rpk cluster info --brokers redpanda:9092 >/dev/null 2>&1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  elasticsearch:
+    image: ${DOCKER_IMAGE_REGISTRY}/es-morphology:${ELASTICSEARCH_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      discovery.type: single-node
+      bootstrap.memory_lock: "true"
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - persist
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -fsS http://127.0.0.1:9200 >/dev/null" ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  redis:
+    image: ${DOCKER_IMAGE_REGISTRY}/redis:${REDIS_IMAGE_TAG}
+    logging: *default-logging
+    command: [ "redis-server", "--appendonly", "yes" ]
+    volumes:
+      - redis_data:/data
+    networks:
+      - persist
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  postgresql-bootstrap:
+    image: ${DOCKER_IMAGE_REGISTRY}/bitnami-postgresql:${POSTGRES_IMAGE_TAG}
+    logging: *default-logging
+    profiles: [ "bootstrap" ]
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgresql
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      KEYCLOAK_DB_NAME: ${KEYCLOAK_DB_NAME}
+      KEYCLOAK_DB_USER: ${KEYCLOAK_DB_USER}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      EDMS_DB_NAME: ${EDMS_DB_NAME}
+      EDMS_DB_USER: ${EDMS_DB_USER}
+      EDMS_DB_PASSWORD: ${EDMS_DB_PASSWORD}
+      NOTIFICATIONS_DB_NAME: ${NOTIFICATIONS_DB_NAME}
+      NOTIFICATIONS_DB_USER: ${NOTIFICATIONS_DB_USER}
+      NOTIFICATIONS_DB_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD}
+      PREVIEWER_DB_NAME: ${PREVIEWER_DB_NAME}
+      PREVIEWER_DB_USER: ${PREVIEWER_DB_USER}
+      PREVIEWER_DB_PASSWORD: ${PREVIEWER_DB_PASSWORD}
+      PDF_TEXT_STORAGE_DB_NAME: ${PDF_TEXT_STORAGE_DB_NAME}
+      PDF_TEXT_STORAGE_DB_USER: ${PDF_TEXT_STORAGE_DB_USER}
+      PDF_TEXT_STORAGE_DB_PASSWORD: ${PDF_TEXT_STORAGE_DB_PASSWORD}
+      AUDIT_LOG_DB_NAME: ${AUDIT_LOG_DB_NAME}
+      AUDIT_LOG_DB_USER: ${AUDIT_LOG_DB_USER}
+      AUDIT_LOG_DB_PASSWORD: ${AUDIT_LOG_DB_PASSWORD}
+      SPICEDB_DB_NAME: ${SPICEDB_DB_NAME}
+      SPICEDB_DB_USER: ${SPICEDB_DB_USER}
+      SPICEDB_DB_PASSWORD: ${SPICEDB_DB_PASSWORD}
+    command:
+      - sh
+      - -ec
+      - |
+        until pg_isready -h "$${POSTGRES_HOST}" -p "$${POSTGRES_PORT}" -U "$${POSTGRES_USER}" >/dev/null 2>&1; do
+          sleep 2
+        done
+
+        bootstrap_consumer() {
+          consumer_name="$1"
+          consumer_db="$2"
+          consumer_password="$3"
+
+          psql "postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@$${POSTGRES_HOST}:$${POSTGRES_PORT}/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -v consumer_name="$${consumer_name}" \
+            -v consumer_db="$${consumer_db}" \
+            -v consumer_password="$${consumer_password}" <<'SQL'
+        SELECT CASE
+          WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'consumer_name')
+          THEN format('ALTER ROLE %I LOGIN PASSWORD %L', :'consumer_name', :'consumer_password')
+          ELSE format('CREATE ROLE %I LOGIN PASSWORD %L', :'consumer_name', :'consumer_password')
+        END
+        \gexec
+
+        SELECT format('CREATE DATABASE %I OWNER %I', :'consumer_db', :'consumer_name')
+        WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'consumer_db')
+        \gexec
+
+        GRANT ALL PRIVILEGES ON DATABASE :"consumer_db" TO :"consumer_name";
+        SQL
+        }
+
+        bootstrap_consumer "$${KEYCLOAK_DB_USER}" "$${KEYCLOAK_DB_NAME}" "$${KEYCLOAK_DB_PASSWORD}"
+        bootstrap_consumer "$${EDMS_DB_USER}" "$${EDMS_DB_NAME}" "$${EDMS_DB_PASSWORD}"
+        bootstrap_consumer "$${NOTIFICATIONS_DB_USER}" "$${NOTIFICATIONS_DB_NAME}" "$${NOTIFICATIONS_DB_PASSWORD}"
+        bootstrap_consumer "$${PREVIEWER_DB_USER}" "$${PREVIEWER_DB_NAME}" "$${PREVIEWER_DB_PASSWORD}"
+        bootstrap_consumer "$${PDF_TEXT_STORAGE_DB_USER}" "$${PDF_TEXT_STORAGE_DB_NAME}" "$${PDF_TEXT_STORAGE_DB_PASSWORD}"
+        bootstrap_consumer "$${AUDIT_LOG_DB_USER}" "$${AUDIT_LOG_DB_NAME}" "$${AUDIT_LOG_DB_PASSWORD}"
+        bootstrap_consumer "$${SPICEDB_DB_USER}" "$${SPICEDB_DB_NAME}" "$${SPICEDB_DB_PASSWORD}"
+
+        psql "postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@$${POSTGRES_HOST}:$${POSTGRES_PORT}/$${EDMS_DB_NAME}" \
+          -v ON_ERROR_STOP=1 \
+          -v edms_user="$${EDMS_DB_USER}" \
+          -v notifications_user="$${NOTIFICATIONS_DB_USER}" <<'SQL'
+        GRANT USAGE ON SCHEMA public TO :"notifications_user";
+        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :"notifications_user";
+        GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO :"notifications_user";
+        ALTER DEFAULT PRIVILEGES FOR ROLE :"edms_user" IN SCHEMA public
+          GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"notifications_user";
+        ALTER DEFAULT PRIVILEGES FOR ROLE :"edms_user" IN SCHEMA public
+          GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO :"notifications_user";
+        SQL
+    restart: "no"
+    networks:
+      - persist
+
+  minio-bootstrap:
+    image: ${DOCKER_IMAGE_REGISTRY}/minio:${MINIO_IMAGE_TAG}
+    logging: *default-logging
+    profiles: [ "bootstrap" ]
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_EDMS_BUCKET: ${MINIO_EDMS_BUCKET}
+      MINIO_PREVIEWER_BUCKET: ${MINIO_PREVIEWER_BUCKET}
+      MINIO_PDF_TEXT_STORAGE_BUCKET: ${MINIO_PDF_TEXT_STORAGE_BUCKET}
+      MINIO_EDMS_BACKUP_BUCKET: ${MINIO_EDMS_BACKUP_BUCKET}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+          sleep 2
+        done
+
+        placeholder=/tmp/.minio-bootstrap-empty
+        : > "$$placeholder"
+
+        bootstrap_bucket() {
+          bucket="$$1"
+          mc mb --ignore-existing "local/$$bucket"
+          bucket_contents=$$(mc ls "local/$$bucket")
+          if [ -z "$$bucket_contents" ]; then
+            mc cp "$$placeholder" "local/$$bucket/.keep"
+          fi
+        }
+
+        bootstrap_bucket "$$MINIO_EDMS_BUCKET"
+        bootstrap_bucket "$$MINIO_PREVIEWER_BUCKET"
+        bootstrap_bucket "$$MINIO_PDF_TEXT_STORAGE_BUCKET"
+        bootstrap_bucket "$$MINIO_EDMS_BACKUP_BUCKET"
+    restart: "no"
+    networks:
+      - persist
+
+  rabbitmq-bootstrap:
+    image: ${DOCKER_IMAGE_REGISTRY}/curlimages_curl:8.19.0
+    logging: *default-logging
+    profiles: [ "bootstrap" ]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_PREVIEWER_USER: ${RABBITMQ_PREVIEWER_USER}
+      RABBITMQ_PREVIEWER_PASS: ${RABBITMQ_PREVIEWER_PASS}
+      RABBITMQ_PDF_TEXT_STORAGE_USER: ${RABBITMQ_PDF_TEXT_STORAGE_USER}
+      RABBITMQ_PDF_TEXT_STORAGE_PASS: ${RABBITMQ_PDF_TEXT_STORAGE_PASS}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        api_base=http://rabbitmq:15672/api
+        auth="$${RABBITMQ_DEFAULT_USER}:$${RABBITMQ_DEFAULT_PASS}"
+
+        http_get() {
+          curl -fsS -u "$${auth}" "$${api_base}/$${1}" >/dev/null
+        }
+
+        http_put() {
+          curl -fsS -u "$${auth}" -H 'content-type: application/json' -X PUT -d "$${2}" "$${api_base}/$${1}" >/dev/null
+        }
+
+        until http_get overview >/dev/null 2>&1; do
+          sleep 2
+        done
+
+        http_put vhosts/%2Fpdf_text_storage '{}'
+        http_put vhosts/%2Fpreviewer '{}'
+        http_put users/$${RABBITMQ_PDF_TEXT_STORAGE_USER} "{\"password\":\"$${RABBITMQ_PDF_TEXT_STORAGE_PASS}\",\"tags\":\"management\"}"
+        http_put users/$${RABBITMQ_PREVIEWER_USER} "{\"password\":\"$${RABBITMQ_PREVIEWER_PASS}\",\"tags\":\"management\"}"
+        http_put permissions/%2Fpdf_text_storage/$${RABBITMQ_PDF_TEXT_STORAGE_USER} '{"configure":".*","write":".*","read":".*"}'
+        http_put permissions/%2Fpreviewer/$${RABBITMQ_PREVIEWER_USER} '{"configure":".*","write":".*","read":".*"}'
+    restart: "no"
+    networks:
+      - persist
+
+  redpanda-bootstrap:
+    image: ${DOCKER_IMAGE_REGISTRY}/redpanda:${REDPANDA_IMAGE_TAG}
+    logging: *default-logging
+    profiles: [ "bootstrap" ]
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      REDPANDA_TOPIC: ${REDPANDA_TOPIC}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        brokers="redpanda:9092"
+
+        until rpk cluster info --brokers "$$brokers" >/dev/null 2>&1; do
+          sleep 5
+        done
+
+        if ! rpk topic list --brokers "$$brokers" | awk 'NR > 1 { print $$1 }' | grep -Fxq "$$REDPANDA_TOPIC"; then
+          rpk topic create "$$REDPANDA_TOPIC" --partitions 100 --brokers "$$brokers"
+        fi
+    restart: "no"
+    networks:
+      - persist
+
+  keycloak:
+    image: ${DOCKER_IMAGE_REGISTRY}/keycloak:${KEYCLOAK_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgresql:5432/keycloak
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_HOSTNAME: https://${FILEMASTER_DOMAIN}/keycloak
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KC_FEATURES: admin-fine-grained-authz
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    command: [ "start" ]
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/9000'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  keycloak-bootstrap:
+    image: ${DOCKER_IMAGE_REGISTRY}/adorsys_keycloak-config-cli:${KEYCLOAK_CONFIG_CLI_IMAGE_TAG}
+    logging: *default-logging
+    profiles: [ "bootstrap" ]
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_USER: ${KEYCLOAK_ADMIN_USERNAME}
+      KEYCLOAK_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      IMPORT_VARSUBSTITUTION_ENABLED: "true"
+      IMPORT_FILES_LOCATIONS: /config/realm.json,/config/master.json
+      IMPORT_REALM: ${KEYCLOAK_REALM}
+      IMPORT_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
+      IMPORT_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      IMPORT_SAML_IDP_ENABLED: ${KEYCLOAK_SAML_IDP_ENABLED}
+      IMPORT_SAML_IDP_DISPLAY_NAME: ${KEYCLOAK_SAML_IDP_DISPLAY_NAME}
+      IMPORT_SAML_IDP_ENTITY_ID: ${KEYCLOAK_SAML_IDP_ENTITY_ID}
+      IMPORT_SAML_IDP_SSO_URL: ${KEYCLOAK_SAML_IDP_SSO_URL}
+      IMPORT_SAML_IDP_SLO_URL: ${KEYCLOAK_SAML_IDP_SLO_URL}
+      IMPORT_SAML_IDP_METADATA_URL: ${KEYCLOAK_SAML_IDP_METADATA_URL}
+      IMPORT_AD_ENABLED: ${KEYCLOAK_LDAP_ENABLED}
+      IMPORT_AD_FEDERATION_NAME: ${KEYCLOAK_LDAP_FEDERATION_NAME}
+      IMPORT_AD_CONNECTION_URL: ${KEYCLOAK_LDAP_CONNECTION_URL}
+      IMPORT_AD_USERS_DN: ${KEYCLOAK_LDAP_USERS_DN}
+      IMPORT_AD_BIND_DN: ${KEYCLOAK_LDAP_BIND_DN}
+      IMPORT_AD_PASSWORD: ${KEYCLOAK_LDAP_BIND_PASSWORD}
+      IMPORT_AD_GROUP_MAPPING_DN: ${KEYCLOAK_LDAP_GROUP_MAPPING_DN}
+      IMPORT_SSO_USER_NAME: ${KEYCLOAK_SSO_USER_NAME}
+      IMPORT_SSO_USER_PASS: ${KEYCLOAK_SSO_USER_PASSWORD}
+      FILEMASTER_DOMAIN: ${FILEMASTER_DOMAIN}
+    volumes:
+      - ./keycloak:/config:ro
+    command: [ "keycloak-config-cli" ]
+    networks:
+      - persist
+      - apps
+    restart: "no"
+
+  # Reconciles groups with fixed IDs (keycloak/group-import.json) via the native
+  # partialImport endpoint: keycloak-config-cli cannot create groups with a
+  # predefined id (the Admin REST API treats a non-null id as "move existing
+  # group" and fails with 404 "Could not find child by id").
+  keycloak-group-import:
+    image: ${DOCKER_IMAGE_REGISTRY}/keycloak:${KEYCLOAK_IMAGE_TAG}
+    logging: *default-logging
+    profiles: [ "bootstrap" ]
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    environment:
+      KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      ACCESS_ADMIN_GROUP_ID: ${ACCESS_ADMIN_GROUP_ID}
+    volumes:
+      - ./keycloak:/config:ro
+    entrypoint:
+      - /bin/bash
+      - -ec
+      - |
+        GROUP_ID=$${ACCESS_ADMIN_GROUP_ID}
+        GROUP_PATH=/fm-admin
+        KCADM_CONFIG=/tmp/kcadm.config
+
+        /opt/keycloak/bin/kcadm.sh config credentials \
+          --server http://keycloak:8080 \
+          --realm master \
+          --user "$${KEYCLOAK_ADMIN_USERNAME}" \
+          --password "$${KEYCLOAK_ADMIN_PASSWORD}" \
+          --config "$$KCADM_CONFIG"
+
+        current_id=$$( \
+          /opt/keycloak/bin/kcadm.sh get groups \
+            -r "$${KEYCLOAK_REALM}" \
+            -q search=fm-admin -q exact=true \
+            --fields id,path \
+            --config "$$KCADM_CONFIG" \
+          | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
+          | head -n1 \
+        )
+
+        if [ -n "$${current_id}" ] && [ "$${current_id}" != "$${GROUP_ID}" ]; then
+          echo "ERROR: group $${GROUP_PATH} already exists with unexpected id $${current_id} (expected $${GROUP_ID})" >&2
+          exit 1
+        fi
+
+        if [ -z "$${current_id}" ]; then
+          sed -e "s/@REALM@/$${KEYCLOAK_REALM}/g" \
+              -e "s/@GROUP_ID@/$${GROUP_ID}/g" \
+              /config/group-import.json > /tmp/group-import.json
+
+          /opt/keycloak/bin/kcadm.sh create partialImport \
+            -r "$${KEYCLOAK_REALM}" \
+            -f /tmp/group-import.json \
+            -q ifResourceExists=FAIL \
+            --config "$$KCADM_CONFIG"
+        else
+          echo "Group $${GROUP_PATH} already exists with id $${GROUP_ID}, nothing to do"
+        fi
+    networks:
+      - persist
+      - apps
+    restart: "no"
+
+  sso-server:
+    image: ${DOCKER_IMAGE_REGISTRY}/sso-server:${SSO_SERVER_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      HTTP_PORT: "8080"
+      GRPC_WEB_PORT: "10080"
+      OBSERVABILITY_PORT: "10081"
+      CACHE_INTERVAL: "900"
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      KEYCLOAK_REDIRECT_URI: https://${FILEMASTER_DOMAIN}/redirect/
+      KEYCLOAK_USERNAME: ${KEYCLOAK_SSO_USER_NAME}
+      KEYCLOAK_PASSWORD: ${KEYCLOAK_SSO_USER_PASSWORD}
+      KEYCLOAK_EXTERNAL_ENDPOINT: https://${FILEMASTER_DOMAIN}/keycloak
+      KEYCLOAK_INTERNAL_ENDPOINT: http://keycloak:8080
+      REDIS_ENDPOINT: redis:6379
+    ports:
+      - "10082:10081"
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  sso-front:
+    image: ${DOCKER_IMAGE_REGISTRY}/sso-front:${SSO_FRONT_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      VITE_SSO_SERVER_ENDPOINT: http://sso-server:8080
+    networks:
+      - apps
+    restart: unless-stopped
+
+  edms-server:
+    image: ${DOCKER_IMAGE_REGISTRY}/edms-server:${EDMS_SERVER_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      ENVIRONMENT: prod
+      LOG_LEVEL: audit
+      GRPC_CLIENT_TLS: ${GRPC_CLIENT_TLS}
+      GRPC_WEB_PORT: "10080"
+      GRPC_GATEWAY_PORT: "8080"
+      OBSERVABILITY_PORT: "10081"
+      DB_ENDPOINT: postgres://${EDMS_DB_USER}:${EDMS_DB_PASSWORD}@postgresql:5432/${EDMS_DB_NAME}?sslmode=disable
+      SSO_ENDPOINT: sso-server:10080
+      AUDIT_LOG_ENDPOINT: audit-log:10080
+      PREVIEWER_ENDPOINT: previewer-server:10080
+      SEARCHP_ENDPOINT: searchp-server:8085
+      S3_ENDPOINT: http://minio:9000
+      S3_AKID: ${S3_AKID}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_REGION: ${MINIO_REGION}
+      S3_REVISIONS_BUCKET: ${MINIO_EDMS_BUCKET}
+      BROKER_TOPIC: ${REDPANDA_TOPIC}
+      BROKER_GROUP_ID: edms-server
+      BROKER_BUFFER: "10000"
+      KAFKA_SEED_BROKERS: redpanda:9092
+      SIGNATURE_PRIVATE_KEY: |-
+        -----BEGIN PRIVATE KEY-----
+        MC4CAQAwBQYDK2VwBCIEICsZrC5FOiAAAZBuLPcqo5crCYbDSyZpbJ5vJQXHc+bT
+        -----END PRIVATE KEY-----
+      SPICEDB_TOKEN: ${SPICEDB_TOKEN}
+      SPICEDB_ENDPOINT: spicedb:50051
+      RECENTLY_EDITED_VIEW_LIMIT: "30"
+      WOPI_PORT: "8090"
+      ACCESS_ADMIN_GROUP_ID: ${ACCESS_ADMIN_GROUP_ID}
+    ports:
+      - "10081:10081"
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  edms-front:
+    image: ${DOCKER_IMAGE_REGISTRY}/edms-front:${EDMS_FRONT_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      VITE_EDMS_SERVER_ENDPOINT: http://edms-server:8080
+    networks:
+      - apps
+    restart: unless-stopped
+
+  edms-notifications:
+    image: ${DOCKER_IMAGE_REGISTRY}/edms-notifications:${EDMS_NOTIFICATIONS_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      ENVIRONMENT: prod
+      LOG_LEVEL: audit
+      GRPC_CLIENT_TLS: ${GRPC_CLIENT_TLS}
+      SSO_ENDPOINT: sso-server:10080
+      PREVIEWER_ENDPOINT: previewer-server:10080
+      DB_ENDPOINT: postgres://${NOTIFICATIONS_DB_USER}:${NOTIFICATIONS_DB_PASSWORD}@postgresql:5432/${NOTIFICATIONS_DB_NAME}?sslmode=disable
+      S3_ENDPOINT: http://minio:9000
+      S3_AKID: ${S3_AKID}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_REGION: ${MINIO_REGION}
+      S3_REVISIONS_BUCKET: ${MINIO_EDMS_BUCKET}
+      KAFKA_SEED_BROKERS: redpanda:9092
+      BROKER_TOPIC: ${REDPANDA_TOPIC}
+      BROKER_GROUP_ID: edms-notifications
+      BROKER_BUFFER: "10000"
+      SMTP_SERVER: postbox.cloud.yandex.net
+      SMTP_PORT: "587"
+      SMTP_USER: API_KEY
+      SMTP_PASS: ""
+      SMTP_FROM_EMAIL: edms@kkmp.tech
+      SMTP_FROM_LABEL: KKMP eDMS
+      DISABLE_MAIL: "true"
+      SENTRY_DSN: ""
+      SENTRY_SERVICE_NAME: edms-notifications
+      SIGNATURE_PRIVATE_KEY: |-
+        -----BEGIN PRIVATE KEY-----
+        MC4CAQAwBQYDK2VwBCIEINpT6vxSfAU6+jcwW+rqfF3+Uuh65201XvbbCPrvsSzb
+        -----END PRIVATE KEY-----
+      SPICEDB_TOKEN: ${SPICEDB_TOKEN}
+      SPICEDB_ENDPOINT: spicedb:50051
+      OBSERVABILITY_PORT: "10081"
+    ports:
+      - "10084:10081"
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  audit-log-db-migrations:
+    image: ${DOCKER_IMAGE_REGISTRY}/audit_log-server:${AUDIT_LOG_IMAGE_TAG}
+    logging: *default-logging
+    profiles: [ "migrate" ]
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      DB_ENDPOINT: postgres://${AUDIT_LOG_DB_USER}:${AUDIT_LOG_DB_PASSWORD}@postgresql:5432/${AUDIT_LOG_DB_NAME}?sslmode=disable
+    command:
+      - sh
+      - -ec
+      - |
+        cd /app
+        ./audit_log-migrations
+    restart: "no"
+    networks:
+      - persist
+
+  previewer-db-migrations:
+    image: ${DOCKER_IMAGE_REGISTRY}/previewer:${PREVIEWER_SERVER_IMAGE_TAG}
+    logging: *default-logging
+    profiles: [ "migrate" ]
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      DB_ENDPOINT: postgres://${PREVIEWER_DB_USER}:${PREVIEWER_DB_PASSWORD}@postgresql:5432/${PREVIEWER_DB_NAME}?sslmode=disable
+      GOOSE_DRIVER: postgres
+      GOOSE_MIGRATION_DIR: migrations
+      GOOSE_DBSTRING: postgres://${PREVIEWER_DB_USER}:${PREVIEWER_DB_PASSWORD}@postgresql:5432/${PREVIEWER_DB_NAME}?sslmode=disable
+    command:
+      - sh
+      - -ec
+      - |
+        cd /app
+        goose up
+    restart: "no"
+    networks:
+      - persist
+
+  pdf-text-storage-db-migrations:
+    image: ${DOCKER_IMAGE_REGISTRY}/pdf-text-storage-server:${PDF_TEXT_STORAGE_IMAGE_TAG}
+    logging: *default-logging
+    profiles: [ "migrate" ]
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      DB_ENDPOINT: postgres://${PDF_TEXT_STORAGE_DB_USER}:${PDF_TEXT_STORAGE_DB_PASSWORD}@postgresql:5432/${PDF_TEXT_STORAGE_DB_NAME}?sslmode=disable
+      GOOSE_DRIVER: postgres
+      GOOSE_MIGRATION_DIR: migrations
+      GOOSE_DBSTRING: postgres://${PDF_TEXT_STORAGE_DB_USER}:${PDF_TEXT_STORAGE_DB_PASSWORD}@postgresql:5432/${PDF_TEXT_STORAGE_DB_NAME}?sslmode=disable
+    command:
+      - sh
+      - -ec
+      - |
+        cd /app
+        goose up
+    restart: "no"
+    networks:
+      - persist
+
+  audit-log:
+    image: ${DOCKER_IMAGE_REGISTRY}/audit_log-server:${AUDIT_LOG_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      GRPC_CLIENT_TLS: ${GRPC_CLIENT_TLS}
+      ENVIRONMENT: prod
+      GRPC_WEB_PORT: "10080"
+      HTTP_PORT: "8080"
+      OBSERVABILITY_PORT: "10081"
+      DB_ENDPOINT: postgres://${AUDIT_LOG_DB_USER}:${AUDIT_LOG_DB_PASSWORD}@postgresql:5432/${AUDIT_LOG_DB_NAME}?sslmode=disable
+      SIGNATURE_PRIVATE_KEY: |-
+        -----BEGIN PRIVATE KEY-----
+        MC4CAQAwBQYDK2VwBCIEINpT6vxSfAU6+jcwW+rqfF3+Uuh65201XvbbCPrvsSzb
+        -----END PRIVATE KEY-----
+      SPICEDB_TOKEN: ${SPICEDB_TOKEN}
+      SPICEDB_ENDPOINT: spicedb:50051
+    ports:
+      - "10083:10081"
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  spicedb-db-migrations:
+    image: ${DOCKER_IMAGE_REGISTRY}/spicedb:${SPICEDB_IMAGE_TAG}
+    logging: *default-logging
+    profiles: [ "migrate" ]
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      SPICEDB_TOKEN: ${SPICEDB_TOKEN}
+    command:
+      - datastore
+      - migrate
+      - head
+      - --datastore-engine=postgres
+      - --datastore-conn-uri
+      - postgres://${SPICEDB_DB_USER}:${SPICEDB_DB_PASSWORD}@postgresql:5432/${SPICEDB_DB_NAME}?sslmode=disable
+    restart: "no"
+    networks:
+      - persist
+
+  spicedb:
+    image: ${DOCKER_IMAGE_REGISTRY}/spicedb:${SPICEDB_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      SPICEDB_TOKEN: ${SPICEDB_TOKEN}
+      SPICEDB_DB_USER: ${SPICEDB_DB_USER}
+      SPICEDB_DB_PASSWORD: ${SPICEDB_DB_PASSWORD}
+      SPICEDB_DB_NAME: ${SPICEDB_DB_NAME}
+    command:
+      - serve
+      - --http-enabled
+      - "true"
+      - --log-level
+      - warn
+      - --grpc-preshared-key
+      - ${SPICEDB_TOKEN}
+      - --datastore-engine
+      - postgres
+      - --datastore-conn-uri
+      - postgres://${SPICEDB_DB_USER}:${SPICEDB_DB_PASSWORD}@postgresql:5432/${SPICEDB_DB_NAME}?sslmode=disable
+      - --telemetry-endpoint
+      - ""
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  previewer-server:
+    image: ${DOCKER_IMAGE_REGISTRY}/previewer:${PREVIEWER_SERVER_IMAGE_TAG}
+    logging: *default-logging
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      unoserver:
+        condition: service_started
+    environment:
+      GRPC_CLIENT_TLS: ${GRPC_CLIENT_TLS}
+      GRPC_WEB_PORT: "10080"
+      METRICS_PORT: "12112"
+      METRICS_SERVICE_NAME: previewer-server
+      UNOSERVER_HOST: unoserver
+      UNOSERVER_PORT: "80"
+      GET_PREVIEW_FILE_CHUNK_SIZE: "65536"
+      GET_FILE_FROM_DISK_CHUNK_SIZE: "65536"
+      DOCS_DIR: '{ "P:": "/mnt/disk_p/", "L:": "/mnt/disk_l/" }'
+      REALTIME_PDF_PREVIEW_THRESHOLD: "-1"
+      REALTIME_PREVIEW_CONVERTING_TIMEOUT: "30"
+      EDMS_ENDPOINT: edms-server:10080
+      SERVICE_ACCOUNT_ID: 8441f5d1-93d5-44a1-8adf-17afae94a51c
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: ${MINIO_REGION}
+      S3_AKID: ${S3_AKID}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: ${MINIO_PREVIEWER_BUCKET}
+      RABBITMQ_TOPIC: generate_preview
+      RABBITMQ_URL: http://rabbitmq:15672
+      RABBITMQ_USER: ${RABBITMQ_PREVIEWER_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PREVIEWER_PASS}
+      RABBITMQ_VHOST: /previewer
+      RABBITMQ_ENDPOINT: amqp://${RABBITMQ_PREVIEWER_USER}:${RABBITMQ_PREVIEWER_PASS}@rabbitmq:5672/%2Fpreviewer
+      GOMEMLIMIT: 800MiB
+      GOOSE_DRIVER: postgres
+      GOOSE_MIGRATION_DIR: migrations
+      DB_ENDPOINT: postgres://${PREVIEWER_DB_USER}:${PREVIEWER_DB_PASSWORD}@postgresql:5432/${PREVIEWER_DB_NAME}?sslmode=disable
+      GOOSE_DBSTRING: postgres://${PREVIEWER_DB_USER}:${PREVIEWER_DB_PASSWORD}@postgresql:5432/${PREVIEWER_DB_NAME}?sslmode=disable
+      NUMBER_OF_RETRIES_FOR_MESSAGE: "3"
+      MAX_FILE_SIZE_FOR_PREVIEW_GENERATION: "209715200"
+      VM_AGENT_PUSH_METRICS_ENDPOINT: ""
+      PREVIEWER_ENDPOINT: previewer-server:10080
+    ports:
+      - "12112:12112"
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.previewer-edms-job-periodic-stage.no-overlap: "true"
+      ofelia.job-exec.previewer-edms-job-periodic-stage.schedule: "@every 10m"
+      ofelia.job-exec.previewer-edms-job-periodic-stage.command: "./previewer-edms-job generate --objectsLimit=0"
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  previewer-listener:
+    image: ${DOCKER_IMAGE_REGISTRY}/previewer:${PREVIEWER_LISTENER_IMAGE_TAG}
+    logging: *default-logging
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    command:
+      - ./previewer-edms-listener
+    environment:
+      GRPC_CLIENT_TLS: ${GRPC_CLIENT_TLS}
+      METRICS_PORT: "12112"
+      METRICS_SERVICE_NAME: previewer-edms-listener
+      BROKER_TOPIC: ${REDPANDA_TOPIC}
+      BROKER_GROUP_ID: previewer-edms-listener
+      EDMS_ENDPOINT: edms-server:10080
+      PREVIEWER_ENDPOINT: previewer-server:10080
+      SERVICE_ACCOUNT_ID: 8441f5d1-93d5-44a1-8adf-17afae94a51c
+      RED_PANDA_ENDPOINTS: redpanda:9092
+      DB_ENDPOINT: postgres://${PREVIEWER_DB_USER}:${PREVIEWER_DB_PASSWORD}@postgresql:5432/${PREVIEWER_DB_NAME}?sslmode=disable
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  previewer-job-worker:
+    image: ${DOCKER_IMAGE_REGISTRY}/previewer:${PREVIEWER_JOB_WORKER_IMAGE_TAG}
+    logging: *default-logging
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    command:
+      - ./previewer-edms-job-worker
+    environment:
+      DB_ENDPOINT: postgres://${PREVIEWER_DB_USER}:${PREVIEWER_DB_PASSWORD}@postgresql:5432/${PREVIEWER_DB_NAME}?sslmode=disable
+      GRPC_CLIENT_TLS: ${GRPC_CLIENT_TLS}
+      METRICS_PORT: "12112"
+      METRICS_SERVICE_NAME: previewer-edms-job-worker
+      RABBITMQ_TOPIC: generate_preview
+      RABBITMQ_PREFETCH_COUNT: "1"
+      PREVIEW_GENERATION_TIMEOUT: "50"
+      PREVIEWER_CLIENT_RETRY_ATTEMPTS: "5"
+      PREVIEWER_CLIENT_RETRY_DELAY: "2"
+      PREVIEWER_CLIENT_RETRY_JITTER: "500"
+      MAX_FILE_SIZE_FOR_PREVIEW_GENERATION: "209715200"
+      EDMS_ENDPOINT: edms-server:10080
+      PREVIEWER_ENDPOINT: previewer-server:10080
+      SERVICE_ACCOUNT_ID: 8441f5d1-93d5-44a1-8adf-17afae94a51c
+      RABBITMQ_ENDPOINT: amqp://${RABBITMQ_PREVIEWER_USER}:${RABBITMQ_PREVIEWER_PASS}@rabbitmq:5672/%2Fpreviewer
+      RABBITMQ_USER: ${RABBITMQ_PREVIEWER_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PREVIEWER_PASS}
+      RABBITMQ_VHOST: /previewer
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  previewer-cleaner:
+    image: ${DOCKER_IMAGE_REGISTRY}/previewer:${PREVIEWER_SERVER_IMAGE_TAG}
+    logging: *default-logging
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      PREVIEW_BUCKET_NAME: ${MINIO_PREVIEWER_BUCKET}
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: ${MINIO_REGION}
+      S3_AKID: ${S3_AKID}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      RABBITMQ_USER: ${RABBITMQ_PREVIEWER_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PREVIEWER_PASS}
+      RABBITMQ_VHOST: /previewer
+      RABBITMQ_URL: http://rabbitmq:15672
+      RABBITMQ_DISK_QUEUE: generate_preview
+      RABBITMQ_EDMS_QUEUE: generate_edms_preview
+      STALE_RUNNING_TTL: 24h
+      DB_ENDPOINT: postgres://${PREVIEWER_DB_USER}:${PREVIEWER_DB_PASSWORD}@postgresql:5432/${PREVIEWER_DB_NAME}?sslmode=disable
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        # Just keep it alive for ofelia to exec into
+        tail -f /dev/null
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.previewer-cleaner-stage.no-overlap: "true"
+      ofelia.job-exec.previewer-cleaner-stage.schedule: ${PREVIEWER_CLEANER_SCHEDULE}
+      ofelia.job-exec.previewer-cleaner-stage.command: "./preview-cleaner"
+    networks:
+      - persist
+    restart: unless-stopped
+
+  previewer-front:
+    image: ${DOCKER_IMAGE_REGISTRY}/previewer-front:${PREVIEWER_FRONT_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      VITE_PREVIEWER_SERVER_ENDPOINT: http://previewer-server:10080
+    networks:
+      - apps
+    restart: unless-stopped
+
+  pdf-text-storage-server:
+    image: ${DOCKER_IMAGE_REGISTRY}/pdf-text-storage-server:${PDF_TEXT_STORAGE_IMAGE_TAG}
+    logging: *default-logging
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      GRPC_CLIENT_TLS: ${GRPC_CLIENT_TLS}
+      GRPC_PORT: "50052"
+      GRPC_WEB_PORT: "8085"
+      RABBIT_MQ_TOPIC: text-extraction
+      RABBIT_MQ_USER: ${RABBITMQ_PDF_TEXT_STORAGE_USER}
+      RABBIT_MQ_PASSWORD: ${RABBITMQ_PDF_TEXT_STORAGE_PASS}
+      RABBIT_MQ_VHOST: /pdf_text_storage
+      RABBIT_MQ_ENDPOINT: amqp://${RABBITMQ_PDF_TEXT_STORAGE_USER}:${RABBITMQ_PDF_TEXT_STORAGE_PASS}@rabbitmq:5672/%2Fpdf_text_storage
+      RABBIT_MQ_URL: http://rabbitmq:15672
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: ${MINIO_REGION}
+      S3_BUCKET: ${MINIO_PDF_TEXT_STORAGE_BUCKET}
+      S3_AKID: ${S3_AKID}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      GOOSE_DRIVER: postgres
+      GOOSE_MIGRATION_DIR: migrations
+      DB_ENDPOINT: postgres://${PDF_TEXT_STORAGE_DB_USER}:${PDF_TEXT_STORAGE_DB_PASSWORD}@postgresql:5432/${PDF_TEXT_STORAGE_DB_NAME}?sslmode=disable
+      GOOSE_DBSTRING: postgres://${PDF_TEXT_STORAGE_DB_USER}:${PDF_TEXT_STORAGE_DB_PASSWORD}@postgresql:5432/${PDF_TEXT_STORAGE_DB_NAME}?sslmode=disable
+      METRICS_PORT: "12112"
+    ports:
+      - "12113:12112"
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  pdf-text-storage-worker:
+    image: ${DOCKER_IMAGE_REGISTRY}/pdf-text-storage-server:${PDF_TEXT_STORAGE_IMAGE_TAG}
+    logging: *default-logging
+    depends_on:
+      pdf-text-storage-server:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    command:
+      - ./pdf_text_storage_worker
+    environment:
+      GRPC_CLIENT_TLS: ${GRPC_CLIENT_TLS}
+      PDF_READER_PATH: ./pdf_reader
+      MAX_WORKERS: "5"
+      PREFETCH_COUNT: "5"
+      RABBIT_MQ_ENDPOINT: amqp://${RABBITMQ_PDF_TEXT_STORAGE_USER}:${RABBITMQ_PDF_TEXT_STORAGE_PASS}@rabbitmq:5672/%2Fpdf_text_storage
+      GRPC_ENDPOINT: pdf-text-storage-server:8085
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  pdf-text-storage-watcher:
+    image: ${DOCKER_IMAGE_REGISTRY}/pdf-text-storage-server:${PDF_TEXT_STORAGE_IMAGE_TAG}
+    logging: *default-logging
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      RABBIT_MQ_ENDPOINT: amqp://${RABBITMQ_PDF_TEXT_STORAGE_USER}:${RABBITMQ_PDF_TEXT_STORAGE_PASS}@rabbitmq:5672/%2Fpdf_text_storage
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: ${MINIO_REGION}
+      S3_BUCKET: ${MINIO_PDF_TEXT_STORAGE_BUCKET}
+      S3_AKID: ${S3_AKID}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      DB_ENDPOINT: postgres://${PDF_TEXT_STORAGE_DB_USER}:${PDF_TEXT_STORAGE_DB_PASSWORD}@postgresql:5432/${PDF_TEXT_STORAGE_DB_NAME}?sslmode=disable
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        # Just keep it alive for ofelia to exec into
+        tail -f /dev/null
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.pdf-text-storage-watcher.no-overlap: "true"
+      ofelia.job-exec.pdf-text-storage-watcher.schedule: ${PDF_TEXT_STORAGE_WATCHER_SCHEDULE}
+      ofelia.job-exec.pdf-text-storage-watcher.command: "./pdf_text_storage_jobs_watcher --max-age-loading 2h --max-age-pending 1h --max-age-running 50m"
+    networks:
+      - persist
+    restart: unless-stopped
+
+  searchp-server:
+    image: ${DOCKER_IMAGE_REGISTRY}/searchp-server:${SEARCHP_SERVER_IMAGE_TAG}
+    logging: *default-logging
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      previewer-server:
+        condition: service_started
+      pdf-text-storage-server:
+        condition: service_started
+    environment:
+      GRPC_CLIENT_TLS: ${GRPC_CLIENT_TLS}
+      GRPC_WEB_PORT: "8085"
+      METRICS_PORT: "9002"
+      CONTENT_CACHE_DIR: /content_cache
+      ENABLE_PREVIEWER_INTEGRATION: "true"
+      SERVICE_ACCOUNT_ID: 8441f5d1-93d5-44a1-8adf-17afae94a51c
+      DISABLE_ACL: "true"
+      DISABLE_ARCHIVE_INDEXING: "true"
+      FOLIO_WORKSPACE_DIRECTORY: /app/
+      FOLIO_MEMORY_LIMIT: "1610612736"
+      NUM_FILE_WORKERS: "10"
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_API_KEY_READER: ${ELASTICSEARCH_API_KEY_READER}
+      ELASTICSEARCH_API_KEY_WRITER: ${ELASTICSEARCH_API_KEY_WRITER}
+      PREVIEWER_SERVER_ENDPOINT: http://previewer-server:10080
+      PDF_TEXT_STORAGE_SERVER_ENDPOINT: pdf-text-storage-server:8085
+      SSO_ENDPOINT: sso-server:10080
+      CHAT_UI_ENDPOINT: http://chat-panel:8080
+      RESOURCE_CONF: '{"disk_share":[],"file_api":[{"type":"edms","address":"edms-server:10080","root_path":"/"}]}'
+      CHAT_UI_SYSTEM_PROMPT_TEMPLATE: |-
+        Ты ассистент по работе с файлом.
+        File: {{name}}
+        {{content}}
+    ports:
+      - "9002:9002"
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.searchp-edms-indexer-delta-stage.no-overlap: "true"
+      ofelia.job-exec.searchp-edms-indexer-delta-stage.schedule: "@every 30m"
+      ofelia.job-exec.searchp-edms-indexer-delta-stage.command: "./searchp-indexer delta-index"
+    volumes:
+      - searchp_cache:/content_cache
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  searchp-edms-listener:
+    image: ${DOCKER_IMAGE_REGISTRY}/searchp-server:${SEARCHP_SERVER_IMAGE_TAG}
+    logging: *default-logging
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      previewer-server:
+        condition: service_started
+      pdf-text-storage-server:
+        condition: service_started
+      searchp-server:
+        condition: service_started
+    command:
+      - ./edms-listener
+    environment:
+      GRPC_CLIENT_TLS: ${GRPC_CLIENT_TLS}
+      METRICS_PORT: "12112"
+      METRICS_SERVICE_NAME: searchp-edms-listener
+      BROKER_TOPIC: ${REDPANDA_TOPIC}
+      BROKER_GROUP_ID: searchp-edms-listener
+      CONTENT_CACHE_DIR: /content_cache
+      ENABLE_PREVIEWER_INTEGRATION: "true"
+      SERVICE_ACCOUNT_ID: 8441f5d1-93d5-44a1-8adf-17afae94a51c
+      DISABLE_ACL: "true"
+      DISABLE_ARCHIVE_INDEXING: "true"
+      FOLIO_WORKSPACE_DIRECTORY: /app/
+      FOLIO_MEMORY_LIMIT: "1610612736"
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_API_KEY_WRITER: ${ELASTICSEARCH_API_KEY_WRITER}
+      RESOURCE_CONF: '{"disk_share":[],"file_api":[{"type":"edms","address":"edms-server:10080","root_path":"/"}]}'
+      PREVIEWER_SERVER_ENDPOINT: http://previewer-server:10080
+      PDF_TEXT_STORAGE_SERVER_ENDPOINT: pdf-text-storage-server:8085
+      RED_PANDA_ENDPOINTS: redpanda:9092
+    volumes:
+      - searchp_cache:/content_cache
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  search-panel:
+    image: ${DOCKER_IMAGE_REGISTRY}/search-panel-web:${SEARCH_PANEL_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      VITE_SEARCHP_SERVER_ENDPOINT: http://searchp-server:8085
+    networks:
+      - apps
+    restart: unless-stopped
+
+  chat-panel:
+    image: ${DOCKER_IMAGE_REGISTRY}/chat-panel-web:${CHAT_PANEL_IMAGE_TAG}
+    logging: *default-logging
+    environment:
+      VITE_SEARCHP_SERVER_ENDPOINT: http://searchp-server:8085
+    networks:
+      - apps
+    restart: unless-stopped
+
+  unoserver:
+    image: ${DOCKER_IMAGE_REGISTRY}/unoserver:${UNOSERVER_IMAGE_TAG}
+    logging: *default-logging
+    networks:
+      - apps
+    restart: unless-stopped
+
+  emergencyexport:
+    image: ${DOCKER_IMAGE_REGISTRY}/edms-emergency-export:${EDMS_EMERGENCY_EXPORT_IMAGE_TAG}
+    profiles: [ "tools" ]
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      DB_ENDPOINT: postgres://${EDMS_DB_USER}:${EDMS_DB_PASSWORD}@postgresql:5432/${EDMS_DB_NAME}?sslmode=disable
+      S3_ENDPOINT: http://minio:9000
+      S3_AKID: ${S3_AKID}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_REGION: ${MINIO_REGION}
+      S3_REVISIONS_BUCKET: ${MINIO_EDMS_BUCKET}
+      OUTPUT_PATH: /mnt/emergency_export
+    volumes:
+      - ${EMERGENCY_EXPORT_HOST_PATH:-./emergency-export/data}:/mnt/emergency_export
+    entrypoint:
+      - /app/emergency-export
+      - --output=/mnt/emergency_export
+    restart: "no"
+    networks:
+      - persist
+
+  edms-access-full-sync:
+    image: ${DOCKER_IMAGE_REGISTRY}/edms-server:${EDMS_SERVER_IMAGE_TAG}
+    logging: *default-logging
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      spicedb:
+        condition: service_started
+    environment:
+      ENVIRONMENT: prod
+      GRPC_CLIENT_TLS: ${GRPC_CLIENT_TLS}
+      DB_ENDPOINT: postgres://${EDMS_DB_USER}:${EDMS_DB_PASSWORD}@postgresql:5432/${EDMS_DB_NAME}?sslmode=disable
+      SSO_ENDPOINT: sso-server:10080
+      AUDIT_LOG_ENDPOINT: audit-log:10080
+      SPICEDB_TOKEN: ${SPICEDB_TOKEN}
+      SPICEDB_ENDPOINT: spicedb:50051
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        echo 'Start full sync access'
+        # Just keep it alive for ofelia to exec into
+        tail -f /dev/null
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.edms-access-full-sync.no-overlap: "true"
+      ofelia.job-exec.edms-access-full-sync.schedule: ${EDMS_ACCESS_FULL_SYNC_SCHEDULE}
+      ofelia.job-exec.edms-access-full-sync.command: "./edms-access-full-sync"
+    networks:
+      - persist
+      - apps
+    restart: unless-stopped
+
+  ofelia:
+    image: ${DOCKER_IMAGE_REGISTRY}/mcuadros_ofelia:0.3.22
+    logging: *default-logging
+    depends_on:
+      previewer-server:
+        condition: service_started
+      searchp-server:
+        condition: service_started
+      edms-access-full-sync:
+        condition: service_started
+      previewer-cleaner:
+        condition: service_started
+      pdf-text-storage-watcher:
+        condition: service_started
+    command: [ "daemon", "--docker" ]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
+  edms-db-migrations:
+    image: ${DOCKER_IMAGE_REGISTRY}/edms-server:${EDMS_SERVER_IMAGE_TAG}
+    logging: *default-logging
+    profiles: [ "migrate" ]
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      DB_ENDPOINT: postgres://${EDMS_DB_USER}:${EDMS_DB_PASSWORD}@postgresql:5432/${EDMS_DB_NAME}?sslmode=disable
+      SSO_ENDPOINT: sso-server:10080
+      AUDIT_LOG_ENDPOINT: audit-log:10080
+      S3_ENDPOINT: http://minio:9000
+      S3_AKID: ${S3_AKID}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_REGION: ${MINIO_REGION}
+      S3_REVISIONS_BUCKET: ${MINIO_EDMS_BUCKET}
+      BROKER_TOPIC: ${REDPANDA_TOPIC}
+      BROKER_GROUP_ID: edms-migrate
+      BROKER_BUFFER: "10000"
+    command:
+      - sh
+      - -ec
+      - |
+        cd /app
+        ./edms-migrations
+    restart: "no"
+    networks:
+      - persist
+
+  caddy:
+    image: ${DOCKER_IMAGE_REGISTRY}/gateway-kkmp:${CADDY_IMAGE_TAG}
+    logging: *default-logging
+    depends_on:
+      keycloak:
+        condition: service_started
+      edms-front:
+        condition: service_started
+      sso-front:
+        condition: service_started
+      previewer-front:
+        condition: service_started
+      search-panel:
+        condition: service_started
+    command: [ "caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile" ]
+    environment:
+      FILEMASTER_DOMAIN: ${FILEMASTER_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/overrides:/etc/caddy/overrides:ro
+      - ./caddy/cert:/tls:ro
+    networks:
+      - apps
+    restart: unless-stopped
+
+networks:
+  persist:
+    driver: bridge
+  apps:
+    driver: bridge
+
+volumes:
+  postgresql_data:
+  minio_data:
+  rabbitmq_data:
+  redpanda_data:
+  elasticsearch_data:
+  redis_data:
+  searchp_cache:

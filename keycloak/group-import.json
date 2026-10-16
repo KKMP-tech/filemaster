@@ -1,0 +1,16 @@
+{
+  "id": "@REALM@",
+  "realm": "@REALM@",
+  "groups": [
+    {
+      "id": "@GROUP_ID@",
+      "name": "fm-admin",
+      "description": "FileMaster administrators group",
+      "path": "/fm-admin",
+      "subGroups": [],
+      "attributes": {},
+      "realmRoles": [],
+      "clientRoles": {}
+    }
+  ]
+}

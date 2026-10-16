@@ -1,0 +1,15 @@
+migration-reports/
+
+# Client-owned and generated configuration.
+client-config.yml
+.env
+.env.override
+fm
+/.fm-install.tmp/
+/docker-compose.override.yml
+
+# Client-owned Caddy overrides (delivery ships only */00-placeholder.caddy).
+/caddy/overrides/**
+!/caddy/overrides/**/
+!/caddy/overrides/00-placeholder.caddy
+!/caddy/overrides/global/00-placeholder.caddy

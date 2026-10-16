@@ -1,0 +1,23 @@
+{
+  "realm": "master",
+  "users": [
+    {
+      "username": "$(IMPORT_SSO_USER_NAME)",
+      "enabled": true,
+      "clientRoles": {
+        "$(IMPORT_REALM)-realm": [
+          "view-users",
+          "view-clients",
+          "query-groups"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "$(IMPORT_SSO_USER_PASS)",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
