@@ -80,10 +80,21 @@ git check-ignore docker-compose.override.yml
 ```
 
 Вторая команда должна вывести `docker-compose.override.yml`. Этот локальный,
-игнорируемый Git файл направляет только данные PostgreSQL и Elasticsearch в
+игнорируемый Git файл направляет данные PostgreSQL, Elasticsearch и MinIO в
 `/srv/filemaster`. Остальные именованные тома остаются в каталоге данных Docker.
 Создание и проверка защищенного тома описаны в LUKS-инструкциях пакета
 `ansible-vault`; не запускайте Compose до монтирования тома и проверки маркера.
+
+На сервере создайте каталоги с UID владельца: PostgreSQL — `1001`,
+Elasticsearch — `1000`, MinIO — `0`. Замените `/путь/к/данным` на путь из
+override (`/srv/filemaster` в примере). Выполните от имени пользователя с `sudo`:
+
+```sh
+DATA_DIR=/путь/к/данным
+sudo install -d -m 0750 -o 1001 -g 0 "$DATA_DIR/postgresql"
+sudo install -d -m 0750 -o 1000 -g 0 "$DATA_DIR/elasticsearch"
+sudo install -d -m 0750 -o 0 -g 0 "$DATA_DIR/minio"
+```
 
 ## TLS-сертификаты
 

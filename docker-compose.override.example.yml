@@ -5,3 +5,6 @@ services:
   elasticsearch:
     volumes:
       - /srv/filemaster/elasticsearch:/usr/share/elasticsearch/data
+  minio:
+    volumes:
+      - /srv/filemaster/minio:/data
