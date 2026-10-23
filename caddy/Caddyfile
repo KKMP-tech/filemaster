@@ -64,6 +64,13 @@ https://{$FILEMASTER_DOMAIN} {
     reverse_proxy sso-server:8080
   }
 
+  handle_path /grpcweb/previewer/* {
+    uri strip_prefix /previewer
+    reverse_proxy previewer-server:10080 {
+      header_up Host {upstream_hostport}
+    }
+  }
+
   handle_path /grpcweb/* {
     reverse_proxy edms-server:10080 {
       header_up Host {upstream_hostport}
