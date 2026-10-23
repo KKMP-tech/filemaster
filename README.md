@@ -347,6 +347,16 @@ LDAP:
 task sso-users-sync
 ```
 
+## Синхронизация прав SpiceDB
+
+После синка SSO `task bootstrap` выполняет полную синхронизацию прав в SpiceDB
+(схема, root, пользователи, группы, директории и объекты). По расписанию то же
+делает ofelia; вручную:
+
+```sh
+task access-full-sync
+```
+
 ## Перенос файлов с локального диска в Filemaster
 
 Для переноса файлов используйте утилиту `file-migrator`:
@@ -411,4 +421,5 @@ task bootstrap
 - `task keycloak-bootstrap` — повторный импорт настроек Keycloak;
 - `task searchp-full-index` — полная индексация;
 - `task sso-users-sync` — синхронизация кэша пользователей и групп SSO;
+- `task access-full-sync` — полная синхронизация прав в SpiceDB;
 - `task wipe` — остановка и удаление контейнеров и томов.
