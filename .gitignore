@@ -4,6 +4,8 @@ migration-reports/
 client-config.yml
 .env
 .env.override
+.env.secrets
+.env.secrets.next
 fm
 /.fm-install.tmp/
 /docker-compose.override.yml

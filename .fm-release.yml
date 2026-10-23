@@ -1,5 +1,5 @@
 fm:
-  required_version: c10b80008
+  required_version: 058e28968
   config_schema: 2
   artifact:
-    ref: cr.yandex/crp3hlk59bl8bqcmkevi/filemaster/fm:c10b80008
+    ref: filemaster/fm:058e28968

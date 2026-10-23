@@ -48,6 +48,7 @@ services:
 
   rabbitmq:
     image: ${DOCKER_IMAGE_REGISTRY}/rabbitmq:${RABBITMQ_IMAGE_TAG}
+    hostname: rabbitmq
     logging: *default-logging
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
@@ -1091,31 +1092,6 @@ services:
     networks:
       - apps
     restart: unless-stopped
-
-  emergencyexport:
-    image: ${DOCKER_IMAGE_REGISTRY}/edms-emergency-export:${EDMS_EMERGENCY_EXPORT_IMAGE_TAG}
-    profiles: [ "tools" ]
-    depends_on:
-      postgresql:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    environment:
-      DB_ENDPOINT: postgres://${EDMS_DB_USER}:${EDMS_DB_PASSWORD}@postgresql:5432/${EDMS_DB_NAME}?sslmode=disable
-      S3_ENDPOINT: http://minio:9000
-      S3_AKID: ${S3_AKID}
-      S3_SECRET_KEY: ${S3_SECRET_KEY}
-      S3_REGION: ${MINIO_REGION}
-      S3_REVISIONS_BUCKET: ${MINIO_EDMS_BUCKET}
-      OUTPUT_PATH: /mnt/emergency_export
-    volumes:
-      - ${EMERGENCY_EXPORT_HOST_PATH:-./emergency-export/data}:/mnt/emergency_export
-    entrypoint:
-      - /app/emergency-export
-      - --output=/mnt/emergency_export
-    restart: "no"
-    networks:
-      - persist
 
   edms-access-full-sync:
     image: ${DOCKER_IMAGE_REGISTRY}/edms-server:${EDMS_SERVER_IMAGE_TAG}

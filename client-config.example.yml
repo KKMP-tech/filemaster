@@ -44,7 +44,3 @@ ldap:
   bind_password: replace-me
   # Ветка каталога с группами.
   group_mapping_dn: OU=Groups,DC=example,DC=internal
-
-emergency_export:
-  # Папка для аварийного экспорта.
-  host_path: ./emergency-export/data
