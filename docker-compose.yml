@@ -491,6 +491,23 @@ services:
       - apps
     restart: unless-stopped
 
+  sso-users-sync:
+    image: ${DOCKER_IMAGE_REGISTRY}/curlimages_curl:8.19.0
+    logging: *default-logging
+    profiles: [ "bootstrap" ]
+    depends_on:
+      - sso-server
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        until curl -fsS -X POST http://sso-server:8080/sync; do
+          sleep 2
+        done
+    networks:
+      - apps
+    restart: "no"
+
   sso-front:
     image: ${DOCKER_IMAGE_REGISTRY}/sso-front:${SSO_FRONT_IMAGE_TAG}
     logging: *default-logging

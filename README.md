@@ -337,6 +337,16 @@ task keycloak-bootstrap
 task searchp-full-index
 ```
 
+## Синхронизация пользователей SSO
+
+`task bootstrap` в конце установки принудительно обновляет кэш пользователей и
+групп SSO из Keycloak (`POST /sync`). Повторно после изменений в Keycloak или
+LDAP:
+
+```sh
+task sso-users-sync
+```
+
 ## Перенос файлов с локального диска в Filemaster
 
 Для переноса файлов используйте утилиту `file-migrator`:
@@ -400,4 +410,5 @@ task bootstrap
 - `task secrets-rotate` — ротация паролей сервисов на работающей установке;
 - `task keycloak-bootstrap` — повторный импорт настроек Keycloak;
 - `task searchp-full-index` — полная индексация;
+- `task sso-users-sync` — синхронизация кэша пользователей и групп SSO;
 - `task wipe` — остановка и удаление контейнеров и томов.

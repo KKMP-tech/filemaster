@@ -133,6 +133,14 @@ tasks:
     cmds:
       - docker compose run --rm --no-deps searchp-server ./searchp-indexer full-index
 
+  sso-users-sync:
+    desc: Sync SSO users and groups cache from Keycloak
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - config-render
+    cmds:
+      - docker compose run --rm sso-users-sync
+
   bootstrap:
     desc: Start the full EDMS stack in phases
     dir: '{{.TASKFILE_DIR}}'
@@ -147,6 +155,7 @@ tasks:
       - task app-migrations
       - task app-start
       - task searchp-full-index
+      - task sso-users-sync
 
   secrets-rotate:
     desc: Rotate installation secrets on a running stack
