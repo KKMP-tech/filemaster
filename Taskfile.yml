@@ -133,20 +133,13 @@ tasks:
     cmds:
       - docker compose run --rm --no-deps searchp-server ./searchp-indexer full-index
 
-  sso-users-sync:
-    desc: Sync SSO users and groups cache from Keycloak
+  users-access-sync:
+    desc: Sync SSO users/groups from Keycloak, then access into SpiceDB
     dir: '{{.TASKFILE_DIR}}'
     deps:
       - config-render
     cmds:
       - docker compose run --rm sso-users-sync
-
-  access-full-sync:
-    desc: Sync access relationships into SpiceDB
-    dir: '{{.TASKFILE_DIR}}'
-    deps:
-      - config-render
-    cmds:
       - docker compose run --rm --entrypoint ./edms-access-full-sync edms-access-full-sync
 
   bootstrap:
@@ -163,8 +156,7 @@ tasks:
       - task app-migrations
       - task app-start
       - task searchp-full-index
-      - task sso-users-sync
-      - task access-full-sync
+      - task users-access-sync
 
   secrets-rotate:
     desc: Rotate installation secrets on a running stack

@@ -337,25 +337,17 @@ task keycloak-bootstrap
 task searchp-full-index
 ```
 
-## Синхронизация пользователей SSO
+## Синхронизация пользователей и прав
 
-`task bootstrap` в конце установки принудительно обновляет кэш пользователей и
-групп SSO из Keycloak (`POST /sync`). Повторно после изменений в Keycloak или
-LDAP:
-
-```sh
-task sso-users-sync
-```
-
-## Синхронизация прав SpiceDB
-
-После синка SSO `task bootstrap` выполняет полную синхронизацию прав в SpiceDB
-(схема, root, пользователи, группы, директории и объекты). По расписанию то же
-делает ofelia; вручную:
+`task bootstrap` в конце установки обновляет кэш пользователей и групп SSO из
+Keycloak (`POST /sync`), затем выполняет полную синхронизацию прав в SpiceDB.
+Повторно после изменений в Keycloak или LDAP:
 
 ```sh
-task access-full-sync
+task users-access-sync
 ```
+
+Права в SpiceDB по расписанию дополнительно синхронизирует ofelia.
 
 ## Перенос файлов с локального диска в Filemaster
 
@@ -420,6 +412,5 @@ task bootstrap
 - `task secrets-rotate` — ротация паролей сервисов на работающей установке;
 - `task keycloak-bootstrap` — повторный импорт настроек Keycloak;
 - `task searchp-full-index` — полная индексация;
-- `task sso-users-sync` — синхронизация кэша пользователей и групп SSO;
-- `task access-full-sync` — полная синхронизация прав в SpiceDB;
+- `task users-access-sync` — синхронизация пользователей SSO и прав в SpiceDB;
 - `task wipe` — остановка и удаление контейнеров и томов.
