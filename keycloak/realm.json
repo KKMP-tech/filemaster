@@ -6,8 +6,11 @@
   "ssoSessionMaxLifespan": 604800,
   "ssoSessionIdleTimeoutRememberMe": 604800,
   "ssoSessionMaxLifespanRememberMe": 604800,
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
   "attributes": {
-    "userProfileEnabled": "true"
+    "userProfileEnabled": "true",
+    "adminEventsExpiration": "1209600"
   },
   "userProfile": {
     "attributes": [
