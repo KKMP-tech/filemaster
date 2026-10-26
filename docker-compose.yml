@@ -1106,6 +1106,16 @@ services:
   unoserver:
     image: ${DOCKER_IMAGE_REGISTRY}/unoserver:${UNOSERVER_IMAGE_TAG}
     logging: *default-logging
+    command:
+      - unoserver
+      - --interface
+      - "0.0.0.0"
+      - --port
+      - "80"
+      - --conversion-timeout
+      - "300"
+      - --verbose
+    shm_size: 512mb
     networks:
       - apps
     restart: unless-stopped
