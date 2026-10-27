@@ -1,5 +1,5 @@
 fm:
-  required_version: 058e28968
+  required_version: 856c341a6
   config_schema: 2
   artifact:
-    ref: filemaster/fm:058e28968
+    ref: filemaster/fm:856c341a6

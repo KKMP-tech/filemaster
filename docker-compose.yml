@@ -1035,9 +1035,11 @@ services:
       ofelia.enabled: "true"
       ofelia.job-exec.searchp-edms-indexer-delta-stage.no-overlap: "true"
       ofelia.job-exec.searchp-edms-indexer-delta-stage.schedule: "@every 30m"
-      ofelia.job-exec.searchp-edms-indexer-delta-stage.command: "./searchp-indexer delta-index"
+      ofelia.job-exec.searchp-edms-indexer-delta-stage.command: "./searchp-indexer-with-lock.sh delta-index"
     volumes:
       - searchp_cache:/content_cache
+      - searchp_indexer_lock:/indexer_lock
+      - ./scripts/searchp-indexer-with-lock.sh:/app/searchp-indexer-with-lock.sh:ro
     networks:
       - persist
       - apps
@@ -1243,3 +1245,4 @@ volumes:
   elasticsearch_data:
   redis_data:
   searchp_cache:
+  searchp_indexer_lock:

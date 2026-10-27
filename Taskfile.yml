@@ -126,12 +126,14 @@ tasks:
       - docker compose up -d sso-server sso-front edms-server edms-front edms-notifications audit-log previewer-front previewer-server previewer-listener previewer-job-worker pdf-text-storage-server pdf-text-storage-worker pdf-text-storage-watcher searchp-server searchp-edms-listener search-panel chat-panel spicedb unoserver ofelia caddy
 
   searchp-full-index:
-    desc: Run the manual full search index
+    desc: Run the full search index (waits unless DETACH=-d)
     dir: '{{.TASKFILE_DIR}}'
     deps:
       - config-render
+    vars:
+      DETACH: '{{.DETACH | default ""}}'
     cmds:
-      - docker compose run --rm --no-deps searchp-server ./searchp-indexer full-index
+      - docker compose run {{.DETACH}} --rm --no-deps searchp-server ./searchp-indexer-with-lock.sh full-index
 
   users-access-sync:
     desc: Sync SSO users/groups from Keycloak, then access into SpiceDB
@@ -155,8 +157,9 @@ tasks:
       - task keycloak-bootstrap
       - task app-migrations
       - task app-start
-      - task searchp-full-index
-      - task users-access-sync
+      - task: searchp-full-index
+        vars:
+          DETACH: "-d"
 
   secrets-rotate:
     desc: Rotate installation secrets on a running stack
