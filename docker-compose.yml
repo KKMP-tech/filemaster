@@ -197,6 +197,12 @@ services:
 
         GRANT ALL PRIVILEGES ON DATABASE :"consumer_db" TO :"consumer_name";
         SQL
+
+          psql "postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@$${POSTGRES_HOST}:$${POSTGRES_PORT}/$${consumer_db}" \
+            -v ON_ERROR_STOP=1 \
+            -v consumer_name="$${consumer_name}" <<'SQL'
+        GRANT ALL PRIVILEGES ON SCHEMA public TO :"consumer_name";
+        SQL
         }
 
         bootstrap_consumer "$${KEYCLOAK_DB_USER}" "$${KEYCLOAK_DB_NAME}" "$${KEYCLOAK_DB_PASSWORD}"
