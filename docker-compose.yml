@@ -591,13 +591,13 @@ services:
       BROKER_TOPIC: ${REDPANDA_TOPIC}
       BROKER_GROUP_ID: edms-notifications
       BROKER_BUFFER: "10000"
-      SMTP_SERVER: postbox.cloud.yandex.net
-      SMTP_PORT: "587"
-      SMTP_USER: API_KEY
-      SMTP_PASS: ""
-      SMTP_FROM_EMAIL: edms@kkmp.tech
-      SMTP_FROM_LABEL: KKMP eDMS
-      DISABLE_MAIL: "true"
+      SMTP_SERVER: ${SMTP_SERVER:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_LABEL: ${SMTP_FROM_LABEL:-}
+      DISABLE_MAIL: ${DISABLE_MAIL:-true}
       SENTRY_DSN: ""
       SENTRY_SERVICE_NAME: edms-notifications
       SIGNATURE_PRIVATE_KEY: |-

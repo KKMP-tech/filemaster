@@ -58,7 +58,118 @@
 
 5. Нажмите Finish, затем OK, чтобы сохранить изменения.
 
-## Шаг 3. Включение подключения в Filemaster
+## Шаг 3. Endpoint выхода (SAML Logout) и сертификат подписи
+
+Без этих настроек вход через AD FS может работать, а выход — останавливаться
+на промежуточной странице Keycloak вместо завершения сеанса в AD FS.
+
+Откройте свойства созданного Relying Party Trust (Properties).
+
+### Endpoints: SAML Logout
+
+1. Перейдите на вкладку Endpoints и нажмите Add SAML...
+2. Задайте параметры:
+
+| Параметр | Значение |
+| - | - |
+| Endpoint type | SAML Logout |
+| Binding | Redirect |
+| Trusted URL | `https://FILEMASTER_DOMAIN/keycloak/realms/edms/broker/adfs/endpoint` |
+| Response URL | `https://FILEMASTER_DOMAIN/keycloak/realms/edms/broker/adfs/endpoint` |
+
+3. Нажмите OK.
+
+Пример для `domain: filemaster.kkmp.tech`:
+
+```text
+https://filemaster.kkmp.tech/keycloak/realms/edms/broker/adfs/endpoint
+```
+
+Оба поля (Trusted URL и Response URL) указывают на один и тот же эндпоинт
+брокера Keycloak. Binding Redirect соответствует настройке поставки
+(`postBindingLogout: false`).
+
+### Signature: сертификат Keycloak
+
+AD FS проверяет подпись LogoutRequest от Keycloak. Сертификат realm нужно
+добавить на вкладку Signature Relying Party Trust.
+
+#### Как получить сертификат
+
+Вариант A — Admin Console Keycloak:
+
+1. Откройте `https://FILEMASTER_DOMAIN/keycloak/admin/`.
+2. Выберите realm `edms`.
+3. Перейдите в Realm settings → Keys.
+4. В строке активного ключа с алгоритмом RS256 (тип SIG) нажмите Certificate.
+5. Скопируйте содержимое окна в файл `keycloak-edms.cer` в формате PEM:
+
+```text
+-----BEGIN CERTIFICATE-----
+...содержимое из окна Certificate...
+-----END CERTIFICATE-----
+```
+
+Вариант B — SAML descriptor брокера (без входа в Admin Console):
+
+1. Откройте в браузере или скачайте XML:
+
+```text
+https://FILEMASTER_DOMAIN/keycloak/realms/edms/broker/adfs/endpoint/descriptor
+```
+
+2. Найдите элемент `X509Certificate` внутри `KeyDescriptor` с
+   `use="signing"` (или первый `X509Certificate`, если `use` не указан).
+3. Оберните Base64-значение в PEM-заголовки, как в варианте A, и сохраните
+   как `keycloak-edms.cer`.
+
+С сервера Filemaster тот же файл можно собрать командой:
+
+```sh
+DOMAIN="$(grep -E '^domain:' client-config.yml | awk '{print $2}')"
+curl -fsS "https://${DOMAIN}/keycloak/realms/edms/broker/adfs/endpoint/descriptor" \
+  | sed -n 's/.*<dsig:X509Certificate>\([^<]*\)<\/dsig:X509Certificate>.*/\1/p; s/.*<ds:X509Certificate>\([^<]*\)<\/ds:X509Certificate>.*/\1/p; s/.*<X509Certificate>\([^<]*\)<\/X509Certificate>.*/\1/p' \
+  | head -n1 \
+  | fold -w 64 \
+  | awk 'BEGIN{print "-----BEGIN CERTIFICATE-----"} {print} END{print "-----END CERTIFICATE-----"}' \
+  > keycloak-edms.cer
+```
+
+#### Добавление в AD FS
+
+1. В свойствах Relying Party Trust откройте вкладку Signature.
+2. Нажмите Add... и выберите файл `keycloak-edms.cer`.
+3. При необходимости через View... → Install Certificate установите
+   сертификат в хранилище на сервере AD FS.
+4. На вкладке Advanced убедитесь, что Secure hash algorithm — SHA-256.
+5. Нажмите Apply, затем OK.
+
+После смены ключей подписи realm в Keycloak (ротация Keys) обновите файл
+на вкладке Signature, иначе выход через AD FS снова может ломаться.
+
+### Want AuthnRequests Signed в Keycloak
+
+Чтобы Keycloak подписывал LogoutRequest (и AuthnRequest) ключом realm,
+в Identity provider `adfs` включают **Want AuthnRequests Signed**. В поставке
+по умолчанию флаг выключен (`wantAuthnRequestsSigned: false`): вход через
+AD FS может работать без сертификата на вкладке Signature, а выход —
+останавливаться на странице Keycloak.
+
+Если после включения флага вход через AD FS перестал работать (сертификат
+ещё не добавлен в Signature, неверный `.cer` или AD FS отвергает подпись),
+отключите его обратно:
+
+1. Откройте `https://FILEMASTER_DOMAIN/keycloak/admin/`.
+2. Realm `edms` → Identity providers → `adfs`.
+3. Выключите **Want AuthnRequests Signed** и сохраните.
+4. Перезапуск Keycloak не требуется. Проверьте вход через кнопку AD FS.
+
+При выключенном флаге вход обычно снова работает; бесшовный выход через
+AD FS может снова ломаться, пока не настроите Signature и не включите флаг.
+Изменение только в Admin Console не переживает `task keycloak-bootstrap`:
+команда вернёт значение из поставки (`false`).
+
+## Шаг 4. Включение подключения в Filemaster
 
 В `client-config.yml` замените все адреса `*.invalid` значениями настроенного
 AD FS, затем установите:
@@ -77,7 +188,7 @@ task keycloak-bootstrap
 
 Перезапуск Keycloak или сервисов Filemaster не требуется.
 
-## Шаг 4. Проверка входа и связывания пользователей
+## Шаг 5. Проверка входа, выхода и связывания пользователей
 
 Проверьте следующие сценарии:
 
@@ -89,6 +200,11 @@ task keycloak-bootstrap
    группах, включая `/fm-admin`, сохраняется.
 3. Пользователь AD FS без совпадения входит в новую отдельную учетную запись.
    Она не добавляется автоматически в `/fm-admin` или другие группы.
+4. Выход из Filemaster после входа через AD FS завершает сеанс без
+   промежуточной страницы аккаунта Keycloak и возвращает к ожидаемому
+   экрану AD FS / входа. Если появляется страница Keycloak — проверьте
+   endpoint SAML Logout (Redirect) и сертификат на вкладке Signature
+   (шаг 3).
 
 Если AD FS снова выключить через `adfs.enabled: false` и применить те же две
 команды, кнопка AD FS должна исчезнуть для новых входов, а локальный вход —

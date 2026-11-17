@@ -1,4 +1,5 @@
 migration-reports/
+/backups/
 
 # Client-owned and generated configuration.
 client-config.yml

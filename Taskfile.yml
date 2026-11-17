@@ -126,14 +126,16 @@ tasks:
       - docker compose up -d sso-server sso-front edms-server edms-front edms-notifications audit-log previewer-front previewer-server previewer-listener previewer-job-worker pdf-text-storage-server pdf-text-storage-worker pdf-text-storage-watcher searchp-server searchp-edms-listener search-panel chat-panel spicedb unoserver ofelia caddy
 
   searchp-full-index:
-    desc: Run the full search index (waits unless DETACH=-d)
+    desc: Run the full search index (waits unless DETACH=-d); aborts a previous run
     dir: '{{.TASKFILE_DIR}}'
     deps:
       - config-render
     vars:
       DETACH: '{{.DETACH | default ""}}'
+      CONTAINER: edms-searchp-full-indexer
     cmds:
-      - docker compose run {{.DETACH}} --rm --no-deps searchp-server ./searchp-indexer-with-lock.sh full-index
+      - docker rm -f {{.CONTAINER}} >/dev/null 2>&1 || true
+      - docker compose run {{.DETACH}} --name {{.CONTAINER}} --rm --no-deps searchp-server ./searchp-indexer-with-lock.sh full-index
 
   users-access-sync:
     desc: Sync SSO users/groups from Keycloak, then access into SpiceDB
@@ -173,6 +175,90 @@ tasks:
     dir: '{{.TASKFILE_DIR}}'
     cmds:
       - docker compose down -v --remove-orphans
+
+  db-dump:
+    desc: Dump all PostgreSQL databases and roles (OUT=path, default backups/pg-dumpall-TIMESTAMP.sql)
+    dir: '{{.TASKFILE_DIR}}'
+    silent: true
+    vars:
+      OUT: '{{.OUT | default ""}}'
+    cmds:
+      - |
+        set -eu
+        out='{{.OUT}}'
+        if [ -z "$out" ]; then
+          mkdir -p backups
+          out="backups/pg-dumpall-$(date +%Y%m%d-%H%M%S).sql"
+        else
+          mkdir -p "$(dirname -- "$out")"
+        fi
+        if ! docker compose exec -T postgresql pg_isready -U postgres >/dev/null 2>&1; then
+          echo "Error: postgresql is not ready; start it first (docker compose up -d postgresql)" >&2
+          exit 1
+        fi
+        docker compose exec -T postgresql \
+          sh -ec 'export PGPASSWORD="${POSTGRES_PASSWORD:-${POSTGRESQL_PASSWORD:-}}"; pg_dumpall -U postgres --clean --if-exists' \
+          > "$out"
+        echo "Wrote $out"
+
+  db-restore:
+    desc: Restore PostgreSQL from a pg_dumpall SQL file (IN=path)
+    dir: '{{.TASKFILE_DIR}}'
+    prompt: This replaces all PostgreSQL databases and roles from the dump file. Continue?
+    vars:
+      IN: '{{.IN | default ""}}'
+    cmds:
+      - |
+        set -eu
+        in='{{.IN}}'
+        if [ -z "$in" ]; then
+          echo "Error: set IN=path/to/pg-dumpall.sql" >&2
+          exit 1
+        fi
+        if [ ! -f "$in" ]; then
+          echo "Error: dump file not found: $in" >&2
+          exit 1
+        fi
+        if ! docker compose exec -T postgresql pg_isready -U postgres >/dev/null 2>&1; then
+          echo "Error: postgresql is not ready; start it first (docker compose up -d postgresql)" >&2
+          exit 1
+        fi
+        docker compose exec -T postgresql \
+          sh -ec 'export PGPASSWORD="${POSTGRES_PASSWORD:-${POSTGRESQL_PASSWORD:-}}"; psql -U postgres -d postgres -v ON_ERROR_STOP=1' \
+          < "$in"
+        echo "Restored $in"
+
+  release-list:
+    desc: List Filemaster Delivery Release tags
+    dir: '{{.TASKFILE_DIR}}'
+    silent: true
+    cmds:
+      - git ls-remote --tags --refs origin | sed 's#^.*refs/tags/##' | sort -V
+
+  release-checkout:
+    desc: Check out a Filemaster Delivery Release tag (RELEASE=name, default newest)
+    dir: '{{.TASKFILE_DIR}}'
+    silent: true
+    vars:
+      RELEASE: '{{.RELEASE | default ""}}'
+    cmds:
+      - |
+        set -eu
+        git fetch origin --tags --force
+        tags="$(git ls-remote --tags --refs origin | sed 's#^.*refs/tags/##' | sort -V)"
+        if [ -z "$tags" ]; then
+          echo "Error: no Delivery Release tags on origin" >&2
+          exit 1
+        fi
+        release='{{.RELEASE}}'
+        if [ -z "$release" ]; then
+          release="$(printf '%s\n' "$tags" | tail -n1)"
+        elif ! printf '%s\n' "$tags" | grep -Fxq -- "$release"; then
+          echo "Error: Delivery Release tag not found on origin: $release" >&2
+          exit 1
+        fi
+        git checkout "$release"
+        echo "Checked out $release"
 
   repo-sync:
     cmds:

@@ -44,3 +44,15 @@ ldap:
   bind_password: replace-me
   # Ветка каталога с группами.
   group_mapping_dn: OU=Groups,DC=example,DC=internal
+
+# Почтовые уведомления Filemaster. Без секции smtp отправка выключена.
+smtp:
+  enabled: false
+  # Для включения укажите имя SMTP-сервера, порт и адрес отправителя.
+  server: ""
+  port: 587
+  from_email: ""
+  from_label: ""
+  # Для SMTP-аутентификации заполните оба поля.
+  user: ""
+  password: ""
