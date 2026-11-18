@@ -23,6 +23,10 @@
 9. На этапе настройки идентификаторов (Configure Identifiers) добавьте Relying party trust identifier:
     https://FILEMASTER_DOMAIN/keycloak/realms/edms
 10. В разделе выбора политики управления доступом (Choose Access Control Policy) выберите политику по умолчанию: Permit Everyone.
+11. Для полного выхода через AD FS после создания доверия настройте SAML Logout
+    и сертификат подписи (шаг 3), затем включите `adfs.sign_requests: true`.
+    Без этого logout остаётся на Keycloak (без MSIS7054), а сеанс AD FS может
+    остаться живым.
 
 ## Шаг 2. Настройка Claim Issuance Policy
 
@@ -147,27 +151,24 @@ curl -fsS "https://${DOMAIN}/keycloak/realms/edms/broker/adfs/endpoint/descripto
 После смены ключей подписи realm в Keycloak (ротация Keys) обновите файл
 на вкладке Signature, иначе выход через AD FS снова может ломаться.
 
-### Want AuthnRequests Signed в Keycloak
+### Want AuthnRequests Signed и `adfs.sign_requests`
 
-Чтобы Keycloak подписывал LogoutRequest (и AuthnRequest) ключом realm,
-в Identity provider `adfs` включают **Want AuthnRequests Signed**. В поставке
-по умолчанию флаг выключен (`wantAuthnRequestsSigned: false`): вход через
-AD FS может работать без сертификата на вкладке Signature, а выход —
-останавливаться на странице Keycloak.
+Подписанный SAML login/logout и пропуск страницы логина Keycloak включаются
+одним флагом в `client-config.yml`: `adfs.sign_requests`.
 
-Если после включения флага вход через AD FS перестал работать (сертификат
-ещё не добавлен в Signature, неверный `.cer` или AD FS отвергает подпись),
-отключите его обратно:
+| `sign_requests` | Поведение |
+| - | - |
+| `false` | Страница логина Keycloak с кнопкой AD FS. Logout идёт в Keycloak и возвращает в приложение **без** проброса в AD FS (нет MSIS7054). Сессия AD FS может остаться живой. |
+| `true` | Keycloak подписывает AuthnRequest/LogoutRequest (`wantAuthnRequestsSigned`), в IdP попадает `slo_url`, страница логина пропускается (`defaultProvider`). Нужны endpoint SAML Logout и сертификат на Signature (этот шаг). |
 
-1. Откройте `https://FILEMASTER_DOMAIN/keycloak/admin/`.
-2. Realm `edms` → Identity providers → `adfs`.
-3. Выключите **Want AuthnRequests Signed** и сохраните.
-4. Перезапуск Keycloak не требуется. Проверьте вход через кнопку AD FS.
+Включайте `sign_requests: true` **только после** добавления сертификата Keycloak
+на вкладку Signature. Иначе logout упрётся в ошибку AD FS MSIS7054.
 
-При выключенном флаге вход обычно снова работает; бесшовный выход через
-AD FS может снова ломаться, пока не настроите Signature и не включите флаг.
-Изменение только в Admin Console не переживает `task keycloak-bootstrap`:
-команда вернёт значение из поставки (`false`).
+Если после включения вход через AD FS перестал работать (сертификат ещё не
+добавлен, неверный `.cer` или AD FS отвергает подпись), верните
+`sign_requests: false`, выполните `task check-config` и
+`task keycloak-bootstrap`. Изменение только в Admin Console не переживает
+bootstrap: команда вернёт значения из `client-config.yml`.
 
 ## Шаг 4. Включение подключения в Filemaster
 
@@ -177,7 +178,12 @@ AD FS, затем установите:
 ```yaml
 adfs:
   enabled: true
+  # После шага 3 (Signature) можно включить подписанный login/logout:
+  # sign_requests: true
 ```
+
+Пока сертификат на Signature не добавлен, оставьте `sign_requests` выключенным
+(или не указывайте поле).
 
 Проверьте и примените конфигурацию:
 
@@ -188,23 +194,44 @@ task keycloak-bootstrap
 
 Перезапуск Keycloak или сервисов Filemaster не требуется.
 
+После завершения шага 3 включите подписанный режим:
+
+```yaml
+adfs:
+  enabled: true
+  sign_requests: true
+```
+
+Снова `task check-config` и `task keycloak-bootstrap`.
+
 ## Шаг 5. Проверка входа, выхода и связывания пользователей
 
-Проверьте следующие сценарии:
+При `sign_requests: false` (или поле не задано):
 
-1. На странице входа появилась кнопка с текстом из `adfs.display_name`, при
-   этом форма локального входа осталась доступна.
-2. Пользователь AD FS с email, совпадающим с локальным пользователем, входит в
+1. На странице входа Keycloak есть кнопка с текстом из `adfs.display_name`,
+   форма локального входа доступна.
+2. Выход возвращает в приложение без ошибки MSIS7054; сессия AD FS может
+   остаться, поэтому повторный вход через кнопку AD FS может пройти без пароля.
+
+При `sign_requests: true` (после шага 3):
+
+1. Страница входа Keycloak пропускается: браузер сразу перенаправляется на форму
+   AD FS. Форма локального входа на этом пути не показывается; локальный вход
+   снова доступен после отключения AD FS (см. ниже) или при
+   `sign_requests: false`.
+2. Выход из Filemaster завершает сеанс без промежуточной страницы аккаунта
+   Keycloak и без MSIS7054, сессия AD FS завершается. Если появляется ошибка
+   AD FS или страница Keycloak — проверьте endpoint SAML Logout (Redirect) и
+   сертификат на вкладке Signature (шаг 3).
+
+В обоих режимах:
+
+1. Пользователь AD FS с email, совпадающим с локальным пользователем, входит в
    ту же учетную запись Filemaster. Если совпадения по email нет, Keycloak
    проверяет имя пользователя. Существующее членство локального пользователя в
    группах, включая `/fm-admin`, сохраняется.
-3. Пользователь AD FS без совпадения входит в новую отдельную учетную запись.
+2. Пользователь AD FS без совпадения входит в новую отдельную учетную запись.
    Она не добавляется автоматически в `/fm-admin` или другие группы.
-4. Выход из Filemaster после входа через AD FS завершает сеанс без
-   промежуточной страницы аккаунта Keycloak и возвращает к ожидаемому
-   экрану AD FS / входа. Если появляется страница Keycloak — проверьте
-   endpoint SAML Logout (Redirect) и сертификат на вкладке Signature
-   (шаг 3).
 
 Если AD FS снова выключить через `adfs.enabled: false` и применить те же две
 команды, кнопка AD FS должна исчезнуть для новых входов, а локальный вход —

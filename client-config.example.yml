@@ -16,6 +16,11 @@ docker_image_registry: cr.yandex/crp3hlk59bl8bqcmkevi
 adfs:
   # Интеграция настроена, но выключена до замены тестовых URL ниже.
   enabled: false
+  # Подписанные SAML login/logout и пропуск страницы логина Keycloak.
+  # Включать только после добавления сертификата Keycloak на вкладку Signature
+  # в AD FS (см. ADFS.md). Пока false: страница логина Keycloak, logout без
+  # проброса в AD FS (нет MSIS7054).
+  sign_requests: false
   # Название провайдера, которое увидит пользователь на странице входа.
   display_name: KKMS AD FS
   # Entity ID (идентификатор) AD FS Relying Party Trust, выданный AD FS.

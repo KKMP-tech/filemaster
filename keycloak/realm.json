@@ -155,7 +155,10 @@
       ],
       "webOrigins": [
         "https://$(FILEMASTER_DOMAIN)"
-      ]
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "https://$(FILEMASTER_DOMAIN)"
+      }
     },
     {
       "id": "24efef37-ed57-4d72-8209-0eb27fe3b68f",
@@ -373,7 +376,7 @@
         "postBindingResponse": "true",
         "postBindingAuthnRequest": "false",
         "postBindingLogout": "false",
-        "wantAuthnRequestsSigned": "false",
+        "wantAuthnRequestsSigned": "$(IMPORT_SAML_IDP_WANT_AUTHN_REQUESTS_SIGNED)",
         "wantAssertionsSigned": "true",
         "wantAssertionsEncrypted": "false",
         "forceAuthn": "false",
@@ -801,6 +804,7 @@
         },
         {
           "authenticator": "identity-provider-redirector",
+          "authenticatorConfig": "default adfs redirector",
           "authenticatorFlow": false,
           "requirement": "ALTERNATIVE",
           "priority": 25,
@@ -1100,6 +1104,14 @@
           "userSetupAllowed": false
         }
       ]
+    }
+  ],
+  "authenticatorConfig": [
+    {
+      "alias": "default adfs redirector",
+      "config": {
+        "defaultProvider": "$(IMPORT_SAML_IDP_DEFAULT_PROVIDER)"
+      }
     }
   ]
 }

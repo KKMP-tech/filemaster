@@ -79,10 +79,15 @@ cp -n client-config.example.yml client-config.yml
   содержит `oras` и `filemaster/fm`;
 - `adfs.enabled` — `false`, пока вход через AD FS не нужен, или `true` после
   настройки AD FS;
+- `adfs.sign_requests` — `false` по умолчанию (можно не указывать). `true`
+  только после сертификата Keycloak на вкладке Signature в AD FS: включает
+  подписанный SAML login/logout, проброс logout в AD FS и пропуск страницы
+  логина Keycloak. Пока `false`, logout остаётся на Keycloak без MSIS7054;
 - `adfs.display_name` — название подключения, отображаемое пользователю;
 - `adfs.entity_id` — идентификатор AD FS;
 - `adfs.sso_url` — адрес AD FS для входа;
-- `adfs.slo_url` — адрес AD FS для выхода;
+- `adfs.slo_url` — адрес AD FS для выхода (в Keycloak попадает только при
+  `sign_requests: true`);
 - `adfs.metadata_url` — адрес XML-метаданных AD FS;
 - `ldap.enabled` — `false`, пока LDAP не нужен, или `true` после настройки
   каталога;
@@ -439,21 +444,16 @@ https://filemaster.compose.kkmp.tech/keycloak/realms/edms/broker/adfs/endpoint
 [ADFS.md](ADFS.md#шаг-3-endpoint-выхода-saml-logout-и-сертификат-подписи).
 После ротации ключей realm обновите сертификат на вкладке Signature.
 
-Для подписанного LogoutRequest в Keycloak может понадобиться включить
-**Want AuthnRequests Signed** у Identity provider `adfs` (realm `edms`).
-Тот же флаг подписывает и AuthnRequest: если после включения вход через AD FS
-перестал работать, а сертификат на вкладке Signature ещё не добавлен или
-отвергается AD FS, временно верните флаг в OFF:
+Подписанный login/logout и пропуск страницы логина Keycloak включаются через
+`adfs.sign_requests: true` в `client-config.yml` (после Signature), затем
+`task check-config` и `task keycloak-bootstrap`. Пока `sign_requests` выключен
+или не указан, Keycloak не пробрасывает logout в AD FS и показывает страницу
+логина с кнопкой AD FS (без MSIS7054).
 
-1. Admin Console → realm `edms` → Identity providers → `adfs`.
-2. Выключите **Want AuthnRequests Signed** и сохраните.
-3. Перезапуск Keycloak не нужен. Проверьте вход через AD FS.
-
-Вход при OFF обычно восстанавливается; бесшовный выход через AD FS при этом
-может снова требовать промежуточной страницы Keycloak, пока не настроите
-доверие сертификата и не включите флаг обратно. Повторный
-`task keycloak-bootstrap` вернёт значение из поставки (`false`), если вы
-меняли только UI.
+Если после `sign_requests: true` вход сломался (сертификат ещё не добавлен или
+отвергается AD FS), верните `sign_requests: false` и снова выполните
+`task check-config` / `task keycloak-bootstrap`. Изменение только в Admin
+Console не переживает bootstrap.
 
 Если email из AD FS совпадает с существующим локальным пользователем, Keycloak
 связывает внешнюю учетную запись с этим пользователем. Если совпадения по email
