@@ -185,6 +185,7 @@ tasks:
     cmds:
       - |
         set -eu
+        set -o pipefail
         out='{{.OUT}}'
         if [ -z "$out" ]; then
           mkdir -p backups
@@ -196,8 +197,14 @@ tasks:
           echo "Error: postgresql is not ready; start it first (docker compose up -d postgresql)" >&2
           exit 1
         fi
+        # pg_dumpall --clean emits DROP/CREATE ROLE for the session user (postgres).
+        # Restoring as that user cannot DROP it, and CREATE then fails with "already exists".
+        # Keep ALTER ROLE so password/attributes are still restored.
         docker compose exec -T postgresql \
           sh -ec 'export PGPASSWORD="${POSTGRES_PASSWORD:-${POSTGRESQL_PASSWORD:-}}"; pg_dumpall -U postgres --clean --if-exists' \
+          | sed -E \
+            -e '/^DROP ROLE( IF EXISTS)? ["'\'']?postgres["'\'']?;/d' \
+            -e '/^CREATE ROLE ["'\'']?postgres["'\'']?;/d' \
           > "$out"
         echo "Wrote $out"
 
