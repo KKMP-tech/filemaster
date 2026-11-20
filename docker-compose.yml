@@ -104,7 +104,8 @@ services:
       discovery.type: single-node
       bootstrap.memory_lock: "true"
       xpack.security.enabled: "false"
-      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      # CVE-2026-114938 (Java4Shell): disable vulnerable Base64 intrinsic until the JDK is patched
+      ES_JAVA_OPTS: -Xms512m -Xmx512m -XX:-UseBASE64Intrinsics
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     networks:
@@ -355,6 +356,8 @@ services:
       KC_FEATURES: admin-fine-grained-authz
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # CVE-2026-114938 (Java4Shell): disable vulnerable Base64 intrinsic until the JDK is patched
+      JAVA_OPTS_APPEND: -XX:-UseBASE64Intrinsics
     command: [ "start" ]
     networks:
       - persist
